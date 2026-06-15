@@ -1,0 +1,18 @@
+package com.softspark.chaos.flow.model;
+
+/**
+ * Transaction flow types supported by the chaos machine.
+ */
+public enum FlowType {
+    COLLECTION_COMPLETED,
+    SETTLEMENT_INITIATED,
+    SETTLEMENT_COMPLETED,
+    SETTLEMENT_FAILED,
+    TOPUP_CONFIRMED,
+    TRANSFER_REQUESTED,
+    TREASURY_PREFUND_COMPLETED,
+    TREASURY_SWEEP_COMPLETED,
+    TREASURY_TRANSFER_COMPLETED,
+    ORGANIZATION_ONBOARDED,
+    VA_UPDATED
+}

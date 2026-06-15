@@ -1,0 +1,60 @@
+chaos:
+  bootstrap:
+    account-roles:
+      - role: SETTLEMENT_ACCOUNT
+        accountCode: ASSET.BANK.SETTLEMENT.0000000000001.GHS
+        category: ASSET
+        currency: GHS
+        defaultVaId: 01J9YQKM8D0000000000SETTLE
+      - role: PLATFORM_FLOAT
+        accountCode: ASSET.PLATFORM.FLOAT
+        category: ASSET
+        currency: GHS
+        defaultVaId: 01J9YQKM8D000000000PLTFLOAT
+      - role: PLATFORM_FLOAT_MTN
+        accountCode: ASSET.PLATFORM.FLOAT.MTN
+        category: ASSET
+        currency: GHS
+        channel: MTN
+        defaultVaId: 01J9YQKM8D00000000PLTFLTMTN
+      - role: PLATFORM_FLOAT_TELECEL
+        accountCode: ASSET.PLATFORM.FLOAT.TELECEL
+        category: ASSET
+        currency: GHS
+        channel: TELECEL
+        defaultVaId: 01J9YQKM8D000000PLTFLTTELEC
+      - role: PLATFORM_FEE
+        accountCode: REVENUE.PLATFORM.FEE
+        category: REVENUE
+        currency: GHS
+        defaultVaId: 01J9YQKM8D000000PLATFORMFEE
+      - role: PROVIDER_FEE
+        accountCode: REVENUE.PROVIDER.FEE
+        category: REVENUE
+        currency: GHS
+        defaultVaId: 01J9YQKM8D000000PROVIDERFEE
+    flow-slots:
+      - flowType: COLLECTION_COMPLETED
+        slotName: source
+        accountRole: PLATFORM_FLOAT
+      - flowType: COLLECTION_COMPLETED
+        slotName: fee
+        accountRole: PLATFORM_FEE
+      - flowType: SETTLEMENT_COMPLETED
+        slotName: destination
+        accountRole: SETTLEMENT_ACCOUNT
+      - flowType: TOPUP_CONFIRMED
+        slotName: destination
+        accountRole: PLATFORM_FLOAT
+      - flowType: TREASURY_PREFUND_COMPLETED
+        slotName: source
+        accountRole: SETTLEMENT_ACCOUNT
+      - flowType: TREASURY_PREFUND_COMPLETED
+        slotName: destination
+        accountRole: PLATFORM_FLOAT_MTN
+      - flowType: TREASURY_SWEEP_COMPLETED
+        slotName: source
+        accountRole: PLATFORM_FLOAT_MTN
+      - flowType: TREASURY_SWEEP_COMPLETED
+        slotName: destination
+        accountRole: SETTLEMENT_ACCOUNT

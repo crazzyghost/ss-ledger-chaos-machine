@@ -1,0 +1,5 @@
+.ref/
+.idea/
+ss-ledger-service
+swift-admin
+.DS_Store

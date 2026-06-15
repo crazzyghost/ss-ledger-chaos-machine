@@ -1,0 +1,36 @@
+- Objectives
+    - Allow for testing the ledger's resilience VIA a UI in a controlled WAY
+
+- BACKEND (Java 25, Spring Boot, app structure follows ss-ledger-service)
+    - Light-weight API server with a simple sqlite backed store
+    - Received requests from a UI app and formulates transaction messages to publish over kafka - smaple flows using
+      bash scripts can be found in ss-ledger-service/bin
+    - Requests can be single or via csv files
+    - Has a preconfigured chart of accounts that bootstraps on start up
+        - Each account is in this category and designated as a default to be used in transaction flows
+            - SETTLEMENT_ACCOUNT
+                - code ASSET.BANK.SETTLEMENT.0000000000001.GHS
+            - PLATFORM_FLOAT
+                - code ASSET.PLATFORM.FLOAT
+            - PLATFORM_FLOAT_MTN
+                - code ASSET.PLATFORM.FLOAT.TELECEL
+            - PLATFORM_FLOAT_TELECEL
+                - code ASSET.PLATFORM.FLOAT.TELECEL
+            - PLATFORM_FEE
+                - code REVENUE.PLATFORM.FEE
+            - PROVIDER_FEE
+                - code
+        - Supports creation of the chart of accounts (configuring which accounts to use in which transaction flows)
+        - Supports creation of virtual accounts - VIA API and via Kafka
+    - Serves as proxy for reaching other services
+        - Supports Login VIA the AUTH SERVICE
+
+- FRONTEND (React app with vite, structure and components follow swift-admin)
+    - Has Login screen for logging in to retrieve an access token
+    - Has a page for creating/viewing virtual accounts
+    - Has a page for configuring chart of accounts
+    - Has a Virtual Account Page for viewing all virtual accounts
+        - Each Virtual account page has a transactions page for viewing transaction history
+    - Has a transactions page
+        - Allows searching via virtual account IDs
+        - Allows searching via 

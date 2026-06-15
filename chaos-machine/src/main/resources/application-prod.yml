@@ -1,0 +1,13 @@
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+chaos:
+  datasource:
+    path: ${CHAOS_DATASOURCE_PATH:/app/data/chaos.db}
+  kafka:
+    cluster-label: ${CHAOS_TARGET_LABEL:production}
+
+logging:
+  level:
+    com.softspark.chaos: INFO
