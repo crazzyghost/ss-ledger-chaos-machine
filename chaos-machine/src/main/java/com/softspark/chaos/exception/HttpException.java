@@ -7,19 +7,19 @@ package com.softspark.chaos.exception;
  */
 public abstract class HttpException extends RuntimeException {
 
-    private final int statusCode;
+  private final int statusCode;
 
-    protected HttpException(int statusCode, String message) {
-        super(message);
-        this.statusCode = statusCode;
-    }
+  protected HttpException(int statusCode, String message) {
+    super(message);
+    this.statusCode = statusCode;
+  }
 
-    protected HttpException(int statusCode, String message, Throwable cause) {
-        super(message, cause);
-        this.statusCode = statusCode;
-    }
+  protected HttpException(int statusCode, String message, Throwable cause) {
+    super(message, cause);
+    this.statusCode = statusCode;
+  }
 
-    public int getStatusCode() {
-        return statusCode;
-    }
+  public int getStatusCode() {
+    return statusCode;
+  }
 }

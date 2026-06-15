@@ -20,108 +20,108 @@ import jakarta.persistence.Table;
 @Table(name = "virtual_account")
 public class VirtualAccount extends AuditableEntity {
 
-    @Id
-    @Column(name = "va_id", nullable = false)
-    private String vaId;
+  @Id
+  @Column(name = "va_id", nullable = false)
+  private String vaId;
 
-    @Column(name = "name", nullable = false)
-    private String name;
+  @Column(name = "name", nullable = false)
+  private String name;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "ownership_type", nullable = false)
-    private AccountOwnershipType ownershipType;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "ownership_type", nullable = false)
+  private AccountOwnershipType ownershipType;
 
-    @Column(name = "organization_id")
-    private String organizationId;
+  @Column(name = "organization_id")
+  private String organizationId;
 
-    @Column(name = "currency", nullable = false, length = 3)
-    private String currency;
+  @Column(name = "currency", nullable = false, length = 3)
+  private String currency;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false)
-    private AccountStatus status;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "status", nullable = false)
+  private AccountStatus status;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "channel")
-    private Channel channel;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "channel")
+  private Channel channel;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "account_role")
-    private AccountRole accountRole;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "account_role")
+  private AccountRole accountRole;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "created_via", nullable = false)
-    private CreatedVia createdVia;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "created_via", nullable = false)
+  private CreatedVia createdVia;
 
-    public String getVaId() {
-        return vaId;
-    }
+  public String getVaId() {
+    return vaId;
+  }
 
-    public void setVaId(String vaId) {
-        this.vaId = vaId;
-    }
+  public void setVaId(String vaId) {
+    this.vaId = vaId;
+  }
 
-    public String getName() {
-        return name;
-    }
+  public String getName() {
+    return name;
+  }
 
-    public void setName(String name) {
-        this.name = name;
-    }
+  public void setName(String name) {
+    this.name = name;
+  }
 
-    public AccountOwnershipType getOwnershipType() {
-        return ownershipType;
-    }
+  public AccountOwnershipType getOwnershipType() {
+    return ownershipType;
+  }
 
-    public void setOwnershipType(AccountOwnershipType ownershipType) {
-        this.ownershipType = ownershipType;
-    }
+  public void setOwnershipType(AccountOwnershipType ownershipType) {
+    this.ownershipType = ownershipType;
+  }
 
-    public String getOrganizationId() {
-        return organizationId;
-    }
+  public String getOrganizationId() {
+    return organizationId;
+  }
 
-    public void setOrganizationId(String organizationId) {
-        this.organizationId = organizationId;
-    }
+  public void setOrganizationId(String organizationId) {
+    this.organizationId = organizationId;
+  }
 
-    public String getCurrency() {
-        return currency;
-    }
+  public String getCurrency() {
+    return currency;
+  }
 
-    public void setCurrency(String currency) {
-        this.currency = currency;
-    }
+  public void setCurrency(String currency) {
+    this.currency = currency;
+  }
 
-    public AccountStatus getStatus() {
-        return status;
-    }
+  public AccountStatus getStatus() {
+    return status;
+  }
 
-    public void setStatus(AccountStatus status) {
-        this.status = status;
-    }
+  public void setStatus(AccountStatus status) {
+    this.status = status;
+  }
 
-    public Channel getChannel() {
-        return channel;
-    }
+  public Channel getChannel() {
+    return channel;
+  }
 
-    public void setChannel(Channel channel) {
-        this.channel = channel;
-    }
+  public void setChannel(Channel channel) {
+    this.channel = channel;
+  }
 
-    public AccountRole getAccountRole() {
-        return accountRole;
-    }
+  public AccountRole getAccountRole() {
+    return accountRole;
+  }
 
-    public void setAccountRole(AccountRole accountRole) {
-        this.accountRole = accountRole;
-    }
+  public void setAccountRole(AccountRole accountRole) {
+    this.accountRole = accountRole;
+  }
 
-    public CreatedVia getCreatedVia() {
-        return createdVia;
-    }
+  public CreatedVia getCreatedVia() {
+    return createdVia;
+  }
 
-    public void setCreatedVia(CreatedVia createdVia) {
-        this.createdVia = createdVia;
-    }
+  public void setCreatedVia(CreatedVia createdVia) {
+    this.createdVia = createdVia;
+  }
 }

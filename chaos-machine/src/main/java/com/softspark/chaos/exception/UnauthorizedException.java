@@ -5,11 +5,11 @@ package com.softspark.chaos.exception;
  */
 public class UnauthorizedException extends HttpException {
 
-    public UnauthorizedException(String message) {
-        super(401, message);
-    }
+  public UnauthorizedException(String message) {
+    super(401, message);
+  }
 
-    public UnauthorizedException(String message, Throwable cause) {
-        super(401, message, cause);
-    }
+  public UnauthorizedException(String message, Throwable cause) {
+    super(401, message, cause);
+  }
 }

@@ -10,15 +10,14 @@ import com.github.f4b6a3.ulid.UlidCreator;
  */
 public final class Ids {
 
-    private Ids() {
-    }
+  private Ids() {}
 
-    /**
-     * Generates a new ULID as a string.
-     *
-     * @return a new ULID string identifier
-     */
-    public static String generate() {
-        return UlidCreator.getMonotonicUlid().toString();
-    }
+  /**
+   * Generates a new ULID as a string.
+   *
+   * @return a new ULID string identifier
+   */
+  public static String generate() {
+    return UlidCreator.getMonotonicUlid().toString();
+  }
 }

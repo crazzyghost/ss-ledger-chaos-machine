@@ -11,8 +11,4 @@ import io.soabase.recordbuilder.core.RecordBuilder;
  * @param message a human-readable error message for this field
  */
 @RecordBuilder
-public record ErrorDescription(
-        String field,
-        String message
-) {
-}
+public record ErrorDescription(String field, String message) {}

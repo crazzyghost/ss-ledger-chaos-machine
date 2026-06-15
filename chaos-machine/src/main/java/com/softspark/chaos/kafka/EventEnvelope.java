@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
-
 import java.time.Instant;
 
 /**
@@ -26,12 +25,10 @@ import java.time.Instant;
 @RecordBuilder
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record EventEnvelope<T>(
-        @JsonProperty("event_id") String eventId,
-        @JsonProperty("event_type") String eventType,
-        Instant timestamp,
-        String source,
-        String version,
-        T data,
-        EventMetadata metadata
-) {
-}
+    @JsonProperty("event_id") String eventId,
+    @JsonProperty("event_type") String eventType,
+    Instant timestamp,
+    String source,
+    String version,
+    T data,
+    EventMetadata metadata) {}

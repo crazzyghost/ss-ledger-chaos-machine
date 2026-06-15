@@ -3,6 +3,8 @@ plugins {
     id 'jacoco'
     id 'org.springframework.boot' version '4.0.6'
     id 'io.spring.dependency-management' version '1.1.7'
+    id("com.diffplug.spotless") version "8.4.0"
+
 }
 
 group = 'com.softspark'
@@ -69,7 +71,7 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     testAnnotationProcessor 'io.soabase.record-builder:record-builder-processor:52'
     testCompileOnly 'io.soabase.record-builder:record-builder-core:52'
-    
+
     integrationTestImplementation platform('org.testcontainers:testcontainers-bom:2.0.3')
     integrationTestImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     integrationTestImplementation 'org.testcontainers:testcontainers-kafka'
@@ -125,4 +127,11 @@ tasks.named('check') {
 
 springBoot {
     buildInfo()
+}
+
+spotless {
+    java {
+        googleJavaFormat("1.35.0").reflowLongStrings().reorderImports(true).formatJavadoc(false)
+        removeUnusedImports()
+    }
 }

@@ -8,5 +8,4 @@ import org.springframework.stereotype.Repository;
  * Repository for organization entities.
  */
 @Repository
-public interface OrganizationRepository extends JpaRepository<Organization, String> {
-}
+public interface OrganizationRepository extends JpaRepository<Organization, String> {}

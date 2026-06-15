@@ -5,11 +5,11 @@ package com.softspark.chaos.exception;
  */
 public class BadRequestException extends HttpException {
 
-    public BadRequestException(String message) {
-        super(400, message);
-    }
+  public BadRequestException(String message) {
+    super(400, message);
+  }
 
-    public BadRequestException(String message, Throwable cause) {
-        super(400, message, cause);
-    }
+  public BadRequestException(String message, Throwable cause) {
+    super(400, message, cause);
+  }
 }

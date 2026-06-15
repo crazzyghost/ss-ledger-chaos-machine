@@ -1,7 +1,6 @@
 package com.softspark.chaos.base;
 
 import io.soabase.recordbuilder.core.RecordBuilder;
-
 import java.util.List;
 
 /**
@@ -16,15 +15,10 @@ import java.util.List;
  * @param <T>     the type of items being paginated
  */
 @RecordBuilder
-public record PageResponse<T>(
-        List<T> items,
-        int page,
-        int perPage,
-        long total
-) {
-    public PageResponse {
-        if (items == null) {
-            items = List.of();
-        }
+public record PageResponse<T>(List<T> items, int page, int perPage, long total) {
+  public PageResponse {
+    if (items == null) {
+      items = List.of();
     }
+  }
 }

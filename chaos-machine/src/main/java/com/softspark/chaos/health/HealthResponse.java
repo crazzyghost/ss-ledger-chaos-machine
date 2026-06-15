@@ -1,7 +1,6 @@
 package com.softspark.chaos.health;
 
 import io.soabase.recordbuilder.core.RecordBuilder;
-
 import java.time.Instant;
 
 /**
@@ -12,9 +11,4 @@ import java.time.Instant;
  * @param clusterLabel the configured Kafka cluster label
  */
 @RecordBuilder
-public record HealthResponse(
-        String status,
-        Instant timestamp,
-        String clusterLabel
-) {
-}
+public record HealthResponse(String status, Instant timestamp, String clusterLabel) {}

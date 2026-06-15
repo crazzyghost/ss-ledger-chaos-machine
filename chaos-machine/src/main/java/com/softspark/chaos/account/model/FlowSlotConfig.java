@@ -17,61 +17,61 @@ import jakarta.persistence.Table;
 @Table(name = "flow_slot_config")
 public class FlowSlotConfig extends AuditableEntity {
 
-    @Id
-    @Column(name = "id", nullable = false)
-    private String id;
+  @Id
+  @Column(name = "id", nullable = false)
+  private String id;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "flow_type", nullable = false)
-    private FlowType flowType;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "flow_type", nullable = false)
+  private FlowType flowType;
 
-    @Column(name = "slot_name", nullable = false)
-    private String slotName;
+  @Column(name = "slot_name", nullable = false)
+  private String slotName;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "account_role")
-    private AccountRole accountRole;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "account_role")
+  private AccountRole accountRole;
 
-    @Column(name = "explicit_va_id")
-    private String explicitVaId;
+  @Column(name = "explicit_va_id")
+  private String explicitVaId;
 
-    public String getId() {
-        return id;
-    }
+  public String getId() {
+    return id;
+  }
 
-    public void setId(String id) {
-        this.id = id;
-    }
+  public void setId(String id) {
+    this.id = id;
+  }
 
-    public FlowType getFlowType() {
-        return flowType;
-    }
+  public FlowType getFlowType() {
+    return flowType;
+  }
 
-    public void setFlowType(FlowType flowType) {
-        this.flowType = flowType;
-    }
+  public void setFlowType(FlowType flowType) {
+    this.flowType = flowType;
+  }
 
-    public String getSlotName() {
-        return slotName;
-    }
+  public String getSlotName() {
+    return slotName;
+  }
 
-    public void setSlotName(String slotName) {
-        this.slotName = slotName;
-    }
+  public void setSlotName(String slotName) {
+    this.slotName = slotName;
+  }
 
-    public AccountRole getAccountRole() {
-        return accountRole;
-    }
+  public AccountRole getAccountRole() {
+    return accountRole;
+  }
 
-    public void setAccountRole(AccountRole accountRole) {
-        this.accountRole = accountRole;
-    }
+  public void setAccountRole(AccountRole accountRole) {
+    this.accountRole = accountRole;
+  }
 
-    public String getExplicitVaId() {
-        return explicitVaId;
-    }
+  public String getExplicitVaId() {
+    return explicitVaId;
+  }
 
-    public void setExplicitVaId(String explicitVaId) {
-        this.explicitVaId = explicitVaId;
-    }
+  public void setExplicitVaId(String explicitVaId) {
+    this.explicitVaId = explicitVaId;
+  }
 }

@@ -7,11 +7,11 @@ package com.softspark.chaos.exception;
  */
 public class ConflictException extends HttpException {
 
-    public ConflictException(String message) {
-        super(409, message);
-    }
+  public ConflictException(String message) {
+    super(409, message);
+  }
 
-    public ConflictException(String message, Throwable cause) {
-        super(409, message, cause);
-    }
+  public ConflictException(String message, Throwable cause) {
+    super(409, message, cause);
+  }
 }

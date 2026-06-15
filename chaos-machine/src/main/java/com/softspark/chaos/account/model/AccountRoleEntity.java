@@ -18,73 +18,73 @@ import jakarta.persistence.Table;
 @Table(name = "account_role")
 public class AccountRoleEntity extends AuditableEntity {
 
-    @Id
-    @Enumerated(EnumType.STRING)
-    @Column(name = "role", nullable = false)
-    private AccountRole role;
+  @Id
+  @Enumerated(EnumType.STRING)
+  @Column(name = "role", nullable = false)
+  private AccountRole role;
 
-    @Column(name = "account_code", nullable = false, unique = true)
-    private String accountCode;
+  @Column(name = "account_code", nullable = false, unique = true)
+  private String accountCode;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "category", nullable = false)
-    private AccountCategory category;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "category", nullable = false)
+  private AccountCategory category;
 
-    @Column(name = "currency", nullable = false, length = 3)
-    private String currency;
+  @Column(name = "currency", nullable = false, length = 3)
+  private String currency;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "channel")
-    private Channel channel;
+  @Enumerated(EnumType.STRING)
+  @Column(name = "channel")
+  private Channel channel;
 
-    @Column(name = "default_va_id")
-    private String defaultVaId;
+  @Column(name = "default_va_id")
+  private String defaultVaId;
 
-    public AccountRole getRole() {
-        return role;
-    }
+  public AccountRole getRole() {
+    return role;
+  }
 
-    public void setRole(AccountRole role) {
-        this.role = role;
-    }
+  public void setRole(AccountRole role) {
+    this.role = role;
+  }
 
-    public String getAccountCode() {
-        return accountCode;
-    }
+  public String getAccountCode() {
+    return accountCode;
+  }
 
-    public void setAccountCode(String accountCode) {
-        this.accountCode = accountCode;
-    }
+  public void setAccountCode(String accountCode) {
+    this.accountCode = accountCode;
+  }
 
-    public AccountCategory getCategory() {
-        return category;
-    }
+  public AccountCategory getCategory() {
+    return category;
+  }
 
-    public void setCategory(AccountCategory category) {
-        this.category = category;
-    }
+  public void setCategory(AccountCategory category) {
+    this.category = category;
+  }
 
-    public String getCurrency() {
-        return currency;
-    }
+  public String getCurrency() {
+    return currency;
+  }
 
-    public void setCurrency(String currency) {
-        this.currency = currency;
-    }
+  public void setCurrency(String currency) {
+    this.currency = currency;
+  }
 
-    public Channel getChannel() {
-        return channel;
-    }
+  public Channel getChannel() {
+    return channel;
+  }
 
-    public void setChannel(Channel channel) {
-        this.channel = channel;
-    }
+  public void setChannel(Channel channel) {
+    this.channel = channel;
+  }
 
-    public String getDefaultVaId() {
-        return defaultVaId;
-    }
+  public String getDefaultVaId() {
+    return defaultVaId;
+  }
 
-    public void setDefaultVaId(String defaultVaId) {
-        this.defaultVaId = defaultVaId;
-    }
+  public void setDefaultVaId(String defaultVaId) {
+    this.defaultVaId = defaultVaId;
+  }
 }

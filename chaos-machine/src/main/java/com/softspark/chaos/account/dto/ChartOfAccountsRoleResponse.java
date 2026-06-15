@@ -17,11 +17,9 @@ import io.soabase.recordbuilder.core.RecordBuilder;
  */
 @RecordBuilder
 public record ChartOfAccountsRoleResponse(
-        AccountRole role,
-        String accountCode,
-        AccountCategory category,
-        String currency,
-        Channel channel,
-        String defaultVaId
-) {
-}
+    AccountRole role,
+    String accountCode,
+    AccountCategory category,
+    String currency,
+    Channel channel,
+    String defaultVaId) {}

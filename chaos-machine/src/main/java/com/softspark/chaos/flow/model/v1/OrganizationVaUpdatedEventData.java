@@ -17,29 +17,23 @@ import io.soabase.recordbuilder.core.RecordBuilder;
 @RecordBuilder
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record OrganizationVaUpdatedEventData(
-        String id,
-        String status,
-        CurrencyInfo currency,
-        AccountType type
-) {
+    String id, String status, CurrencyInfo currency, AccountType type) {
 
-    /**
-     * Currency information.
-     *
-     * @param id the currency ID (ISO-4217 code)
-     */
-    @RecordBuilder
-    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record CurrencyInfo(String id) {
-    }
+  /**
+   * Currency information.
+   *
+   * @param id the currency ID (ISO-4217 code)
+   */
+  @RecordBuilder
+  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+  public record CurrencyInfo(String id) {}
 
-    /**
-     * Account type information.
-     *
-     * @param id the account type ID
-     */
-    @RecordBuilder
-    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record AccountType(String id) {
-    }
+  /**
+   * Account type information.
+   *
+   * @param id the account type ID
+   */
+  @RecordBuilder
+  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+  public record AccountType(String id) {}
 }

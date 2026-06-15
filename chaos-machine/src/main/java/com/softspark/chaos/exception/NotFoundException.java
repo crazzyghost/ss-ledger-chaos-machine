@@ -5,11 +5,11 @@ package com.softspark.chaos.exception;
  */
 public class NotFoundException extends HttpException {
 
-    public NotFoundException(String message) {
-        super(404, message);
-    }
+  public NotFoundException(String message) {
+    super(404, message);
+  }
 
-    public NotFoundException(String message, Throwable cause) {
-        super(404, message, cause);
-    }
+  public NotFoundException(String message, Throwable cause) {
+    super(404, message, cause);
+  }
 }

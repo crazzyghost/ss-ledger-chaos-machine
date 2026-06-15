@@ -5,11 +5,11 @@ package com.softspark.chaos.exception;
  */
 public class InternalServerErrorException extends HttpException {
 
-    public InternalServerErrorException(String message) {
-        super(500, message);
-    }
+  public InternalServerErrorException(String message) {
+    super(500, message);
+  }
 
-    public InternalServerErrorException(String message, Throwable cause) {
-        super(500, message, cause);
-    }
+  public InternalServerErrorException(String message, Throwable cause) {
+    super(500, message, cause);
+  }
 }

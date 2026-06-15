@@ -24,27 +24,14 @@ import jakarta.validation.constraints.NotNull;
  */
 @RecordBuilder
 public record CreateVirtualAccountRequest(
-        @NotBlank(message = "Name is required")
-        String name,
-
-        @NotNull(message = "Ownership type is required")
+    @NotBlank(message = "Name is required") String name,
+    @NotNull(message = "Ownership type is required")
         @IsInEnum(enumClass = AccountOwnershipType.class, message = "Invalid ownership type")
         String ownershipType,
-
-        @NotBlank(message = "Currency is required")
-        @ISO4217
-        String currency,
-
-        String organizationId,
-        String organizationName,
-
-        @IsInEnum(enumClass = Channel.class, message = "Invalid channel")
-        String channel,
-
-        @IsInEnum(enumClass = AccountStatus.class, message = "Invalid status")
-        String status,
-
-        String vaId,
-        Boolean announce
-) {
-}
+    @NotBlank(message = "Currency is required") @ISO4217 String currency,
+    String organizationId,
+    String organizationName,
+    @IsInEnum(enumClass = Channel.class, message = "Invalid channel") String channel,
+    @IsInEnum(enumClass = AccountStatus.class, message = "Invalid status") String status,
+    String vaId,
+    Boolean announce) {}

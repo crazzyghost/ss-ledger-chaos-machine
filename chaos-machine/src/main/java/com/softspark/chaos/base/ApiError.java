@@ -1,7 +1,6 @@
 package com.softspark.chaos.base;
 
 import io.soabase.recordbuilder.core.RecordBuilder;
-
 import java.util.List;
 
 /**
@@ -15,14 +14,10 @@ import java.util.List;
  * @param errors         list of field-level validation errors (empty for non-validation errors)
  */
 @RecordBuilder
-public record ApiError(
-        String requestId,
-        String message,
-        List<ErrorDescription> errors
-) {
-    public ApiError {
-        if (errors == null) {
-            errors = List.of();
-        }
+public record ApiError(String requestId, String message, List<ErrorDescription> errors) {
+  public ApiError {
+    if (errors == null) {
+      errors = List.of();
     }
+  }
 }

@@ -18,8 +18,6 @@ import io.soabase.recordbuilder.core.RecordBuilder;
 @RecordBuilder
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record EventMetadata(
-        @JsonProperty("correlation_id") String correlationId,
-        @JsonProperty("idempotency_key") String idempotencyKey,
-        @JsonProperty("tenant_id") String tenantId
-) {
-}
+    @JsonProperty("correlation_id") String correlationId,
+    @JsonProperty("idempotency_key") String idempotencyKey,
+    @JsonProperty("tenant_id") String tenantId) {}

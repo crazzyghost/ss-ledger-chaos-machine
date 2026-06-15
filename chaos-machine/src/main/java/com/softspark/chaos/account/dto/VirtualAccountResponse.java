@@ -6,7 +6,6 @@ import com.softspark.chaos.account.enumeration.AccountStatus;
 import com.softspark.chaos.account.enumeration.Channel;
 import com.softspark.chaos.account.enumeration.CreatedVia;
 import io.soabase.recordbuilder.core.RecordBuilder;
-
 import java.time.Instant;
 
 /**
@@ -26,16 +25,14 @@ import java.time.Instant;
  */
 @RecordBuilder
 public record VirtualAccountResponse(
-        String vaId,
-        String name,
-        AccountOwnershipType ownershipType,
-        String organizationId,
-        String currency,
-        AccountStatus status,
-        Channel channel,
-        AccountRole accountRole,
-        CreatedVia createdVia,
-        Instant createdAt,
-        Instant updatedAt
-) {
-}
+    String vaId,
+    String name,
+    AccountOwnershipType ownershipType,
+    String organizationId,
+    String currency,
+    AccountStatus status,
+    Channel channel,
+    AccountRole accountRole,
+    CreatedVia createdVia,
+    Instant createdAt,
+    Instant updatedAt) {}

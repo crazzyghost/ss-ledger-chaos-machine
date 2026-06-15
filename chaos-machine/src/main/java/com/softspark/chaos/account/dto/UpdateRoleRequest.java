@@ -12,11 +12,5 @@ import jakarta.validation.constraints.NotBlank;
  */
 @RecordBuilder
 public record UpdateRoleRequest(
-        @NotBlank(message = "Default VA ID is required")
-        String defaultVaId,
-
-        @NotBlank(message = "Currency is required")
-        @ISO4217
-        String currency
-) {
-}
+    @NotBlank(message = "Default VA ID is required") String defaultVaId,
+    @NotBlank(message = "Currency is required") @ISO4217 String currency) {}
