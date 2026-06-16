@@ -1,6 +1,7 @@
 package com.softspark.chaos.base;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -9,16 +10,22 @@ import java.util.Objects;
 
 /**
  * Base entity with audit timestamps.
- * <p>
- * Provides {@code createdAt} and {@code updatedAt} fields that are automatically
- * set on persist and update operations. All domain entities should extend this class.
+ *
+ * <p>Provides {@code createdAt} and {@code updatedAt} fields that are automatically set on persist
+ * and update operations. All domain entities should extend this class.
+ *
+ * <p>Timestamps are stored as ISO-8601 text via {@link InstantStringConverter} to ensure
+ * compatibility with the SQLite community dialect, which does not natively support JDBC timestamp
+ * parsing from epoch-millis strings.
  */
 @MappedSuperclass
 public abstract class AuditableEntity {
 
+  @Convert(converter = InstantStringConverter.class)
   @Column(name = "created_at", nullable = false, updatable = false)
   private Instant createdAt;
 
+  @Convert(converter = InstantStringConverter.class)
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 

@@ -2,7 +2,7 @@
 
 ## Functional Requirements
 - Expose `POST /api/v0/flows/{flowType}` to publish a single, well-formed event for any of the
-  11 flows, with system VAs resolved from the chart of accounts and client/org VAs supplied or
+  12 flows, with system VAs resolved from the chart of accounts and client/org VAs supplied or
   resolved. Provide `GET /api/v0/flows/catalog` describing each flow's fields. Payloads must be
   byte-compatible with the ledger (oracle: `ss-ledger-service/bin/kafka-payload-samples.md`).
 
@@ -34,6 +34,11 @@ data{…}, metadata{ correlation_id, idempotency_key=<event_type>:<event_id>, te
 | `SETTLEMENT_COMPLETED` | `organization.va.settlement.completed` | settlements-service | source_va_id |
 | `SETTLEMENT_FAILED` | `organization.va.settlement.failed` | settlements-service | virtual_account_id |
 | `COLLECTION_COMPLETED` | `collection.completed` | payments-service | destination_va_id |
+| `DISBURSEMENT_COMPLETED` | `disbursement.completed` ³ | disbursements-service | source_va_id |
+
+³ **Proposed contract** — no ledger sample exists yet (`DISBURSEMENT` is a known
+`TransactionTypeEnum`/`EntryTypeEnum` without a published event). Modeled symmetric to
+collection; confirm against the ledger when its disbursement consumer lands.
 
 ### `data` payload schemas (`flow/model/v1`, snake_case)
 
@@ -81,9 +86,20 @@ data{…}, metadata{ correlation_id, idempotency_key=<event_type>:<event_id>, te
 `net_amount`, `currency`, `merchant_reference`, `provider_collection_id`,
 `fees[]{ fee_type, amount, destination_va_id }`. Invariant: `net_amount = gross_amount − Σ fee.amount`.
 
+**disbursement.completed** ³ (proposed; money out) — `DisbursementCompletedEventData`:
+`disbursement_request_id`, `organization_id`(owner of source VA), `source_va_id`(merchant org —
+debited), `destination_va_id`(PLATFORM_FLOAT system — credited), `gross_amount`, `net_amount`,
+`currency`, `recipient_account_number`, `recipient_bank`(or `recipient_channel`),
+`merchant_reference`, `provider_disbursement_id`,
+`fees[]{ fee_type, amount, destination_va_id }`, `approved_by`, `completed_at`.
+Invariant: `gross_amount = net_amount + Σ fee.amount` (merchant is debited the payout plus fees).
+Mirror of collection with source/destination reversed; `source = disbursements-service`.
+
 ### Slot resolution defaults (from Phase 002)
 - `COLLECTION_COMPLETED.source_va_id` ← `PLATFORM_FLOAT` (or `PLATFORM_FLOAT_MTN/TELECEL` by
   `channel`); `fees[].destination_va_id` ← `PLATFORM_FEE` / `PROVIDER_FEE` by `fee_type`.
+- `DISBURSEMENT_COMPLETED.destination_va_id` ← `PLATFORM_FLOAT` (or `*_MTN/TELECEL` by `channel`);
+  `source_va_id` is the merchant org VA (request input); fees as for collection.
 - `SETTLEMENT_COMPLETED.destination_va_id` ← `SETTLEMENT_ACCOUNT`.
 - Treasury source/destination ← configured system roles. Client/org VAs are request inputs.
 
@@ -107,8 +123,11 @@ sequenceDiagram
   `@JsonNaming` snake_case), `flow/builder/*FlowBuilder`, `flow/model/v1/*EventData`.
 - Reuse field defaults from the bin scripts (e.g. `tenant_id=org_123`, `currency=GHS`,
   `approved_by=ops@acme.example`) as request defaults; everything overridable.
-- `amount`/`gross`/`net`/`fee.amount` are `BigDecimal`; validate `net = gross − Σfees` for collection.
+- `amount`/`gross`/`net`/`fee.amount` are `BigDecimal`; validate `net = gross − Σfees` for
+  collection and `gross = net + Σfees` for disbursement.
 - Build the `JsonFixtures` oracle from `bin/kafka-payload-samples.md` for parity assertions.
+  `disbursement.completed` has no bin sample yet → use a committed proposed fixture, flagged to
+  reconcile with the ledger's eventual contract.
 
 ## Non-Functional Requirements
 - Validation + resolution + publish round trip < 50ms p50 locally.
@@ -124,7 +143,7 @@ Task 001 (engine), Phase 002 (resolution), Phase 001 (publisher), Task 005 (hist
 ## Testing Strategy
 - One contract test per flow: build envelope, assert equals fixture JSON.
 - WebMvc tests: per-flow validation (missing required client VA, bad currency, imbalance).
-- Catalog endpoint test (fields/types/slots present for all 11).
+- Catalog endpoint test (fields/types/slots present for all 12).
 
 ## Deployment Strategy
 Auth-protected. No flag. Target broker label surfaced for safety.

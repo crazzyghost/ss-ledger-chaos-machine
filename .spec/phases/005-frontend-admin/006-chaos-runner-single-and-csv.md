@@ -1,7 +1,7 @@
 # Task 006 - Chaos Runner (Single & CSV)
 
 ## Functional Requirements
-- An operator console to drive the ledger: build and send a **single** flow (any of the 11,
+- An operator console to drive the ledger: build and send a **single** flow (any of the 12,
   with optional chaos options), and **upload a CSV** to run a batch — with live run progress and
   per-row outcomes. Realizes the UI half of the project objective ("test resilience in a
   controlled way").

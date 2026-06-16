@@ -4,7 +4,8 @@
 Accepted
 
 ## Context
-The ledger consumes 11 inbound topics. Every payload shares one envelope shape (observed in
+The ledger consumes a family of inbound topics (11 with published samples, plus the proposed
+`disbursement.completed` — 12 flows total). Every payload shares one envelope shape (observed in
 `ss-ledger-service/bin/*.sh` and `bin/kafka-payload-samples.md`):
 
 ```json

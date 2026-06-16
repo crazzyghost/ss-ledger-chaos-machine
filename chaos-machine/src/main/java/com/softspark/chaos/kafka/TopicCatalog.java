@@ -25,6 +25,7 @@ public class TopicCatalog {
   private String organizationVaSettlementCompleted = "organization.va.settlement.completed";
   private String organizationVaSettlementFailed = "organization.va.settlement.failed";
   private String collectionCompleted = "collection.completed";
+  private String disbursementCompleted = "disbursement.completed";
 
   public String getOrganizationOnboarded() {
     return organizationOnboarded;
@@ -113,5 +114,23 @@ public class TopicCatalog {
 
   public void setCollectionCompleted(String collectionCompleted) {
     this.collectionCompleted = collectionCompleted;
+  }
+
+  /**
+   * Returns the topic name for disbursement completed events.
+   *
+   * @return the disbursement completed topic name
+   */
+  public String getDisbursementCompleted() {
+    return disbursementCompleted;
+  }
+
+  /**
+   * Sets the topic name for disbursement completed events.
+   *
+   * @param disbursementCompleted the disbursement completed topic name
+   */
+  public void setDisbursementCompleted(String disbursementCompleted) {
+    this.disbursementCompleted = disbursementCompleted;
   }
 }

@@ -4,6 +4,8 @@
 - Accept a CSV upload of flow rows, validate per-row, and execute them as a tracked **batch
   run** with bounded concurrency, optional rate limiting, partial-failure isolation, and
   progress querying. (See [ADR-007](../../decisions/007-csv-batch-execution-model.md).)
+- The ledger's `BATCH_DISBURSEMENT` / `BATCH_SETTLEMENT` transaction types are realized here as
+  CSV batches of the single `DISBURSEMENT_COMPLETED` / `SETTLEMENT_*` flows — no separate flow types.
 
 ## Acceptance Criteria
 - [ ] `POST /api/v0/batches` (multipart: `file`, `flowType`, optional `maxRatePerSecond`,

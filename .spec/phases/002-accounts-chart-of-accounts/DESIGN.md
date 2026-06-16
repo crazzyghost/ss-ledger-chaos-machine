@@ -1,5 +1,10 @@
 # Phase 2 - Accounts & Chart of Accounts
 
+> **Note:** the chart-of-accounts *bootstrap mechanism* (Task 001) is superseded by
+> [Phase 025](../025-chart-of-accounts-http-bootstrap/DESIGN.md): system-account VA ids are now
+> provisioned in and returned by the ledger over HTTP, not seeded from config. The registry,
+> flow-slot config, and VA-creation tasks in this phase remain current.
+
 ## Summary
 Give the chaos machine its account model: a **chart of accounts** of friendly system
 **account roles** (bootstrapped on startup), a **virtual-account registry** of all VAs it

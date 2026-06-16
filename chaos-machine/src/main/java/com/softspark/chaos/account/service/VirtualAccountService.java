@@ -83,6 +83,7 @@ public class VirtualAccountService {
 
     // Validate organization requirements
     String organizationId = request.organizationId();
+    boolean newOrganization = false;
     if (ownershipType == AccountOwnershipType.ORGANIZATION) {
       if (organizationId == null || organizationId.isBlank()) {
         throw new BadRequestException(
@@ -99,6 +100,7 @@ public class VirtualAccountService {
                 : "Organization " + organizationId);
         organization.setStatus(OrganizationStatus.ACTIVE);
         organizationRepository.save(organization);
+        newOrganization = true;
         log.info("Created new organization: {}", organizationId);
       }
     }
@@ -139,7 +141,7 @@ public class VirtualAccountService {
 
     // Publish announcement event if requested
     if (Boolean.TRUE.equals(request.announce())) {
-      eventPublisher.publishEvent(new VirtualAccountCreatedEvent(saved));
+      eventPublisher.publishEvent(new VirtualAccountCreatedEvent(saved, newOrganization));
       log.info("Published VA creation event for: {}", saved.getVaId());
     }
 
@@ -241,7 +243,9 @@ public class VirtualAccountService {
   /**
    * Event published after a virtual account is created with announce=true.
    *
-   * @param virtualAccount the created virtual account
+   * @param virtualAccount  the created virtual account
+   * @param newOrganization {@code true} if the organization was created as part of this request
    */
-  public record VirtualAccountCreatedEvent(VirtualAccount virtualAccount) {}
+  public record VirtualAccountCreatedEvent(
+      VirtualAccount virtualAccount, boolean newOrganization) {}
 }

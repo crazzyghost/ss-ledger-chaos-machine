@@ -17,15 +17,19 @@ import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 /**
  * Service for announcing virtual account events to Kafka.
- * <p>
- * Publishes organization.onboarded and organization.va.updated events after successful
- * transaction commits to ensure consistency between the local registry and the ledger.
+ *
+ * <p>Publishes {@code organization.onboarded} and {@code organization.va.updated} events after
+ * successful transaction commits to ensure consistency between the local registry and the ledger.
+ *
+ * <p>The {@code metadata.tenant_id} field defaults to the value of {@code chaos.default-tenant-id}
+ * (configurable via environment variable {@code CHAOS_DEFAULT_TENANT_ID}).
  */
 @Service
 public class VirtualAccountAnnouncer {
@@ -38,23 +42,27 @@ public class VirtualAccountAnnouncer {
   private final TopicCatalog topicCatalog;
   private final VirtualAccountRepository virtualAccountRepository;
   private final OrganizationRepository organizationRepository;
+  private final String defaultTenantId;
 
   public VirtualAccountAnnouncer(
       ChaosEventPublisher eventPublisher,
       TopicCatalog topicCatalog,
       VirtualAccountRepository virtualAccountRepository,
-      OrganizationRepository organizationRepository) {
+      OrganizationRepository organizationRepository,
+      @Value("${chaos.default-tenant-id:org_system}") String defaultTenantId) {
     this.eventPublisher = eventPublisher;
     this.topicCatalog = topicCatalog;
     this.virtualAccountRepository = virtualAccountRepository;
     this.organizationRepository = organizationRepository;
+    this.defaultTenantId = defaultTenantId;
   }
 
   /**
    * Listens for virtual account creation events and publishes to Kafka after commit.
-   * <p>
-   * This method is invoked automatically when a {@link VirtualAccountService.VirtualAccountCreatedEvent}
-   * is published, but only after the transaction commits successfully.
+   *
+   * <p>Only calls {@link #publishOrganizationOnboarded(Organization)} when the event signals that
+   * the organization was newly created ({@code event.newOrganization() == true}). The VA-updated
+   * event is always published regardless.
    *
    * @param event the virtual account created event
    */
@@ -62,14 +70,32 @@ public class VirtualAccountAnnouncer {
   public void onVirtualAccountCreated(VirtualAccountService.VirtualAccountCreatedEvent event) {
     var va = event.virtualAccount();
     log.info("Publishing virtual account announcement for: {}", va.getVaId());
-    announceVirtualAccount(va.getVaId());
+
+    if (va.getOwnershipType() != AccountOwnershipType.ORGANIZATION) {
+      log.debug("Skipping announcement for SYSTEM VA: {}", va.getVaId());
+      return;
+    }
+
+    if (va.getOrganizationId() == null || va.getOrganizationId().isBlank()) {
+      log.warn("Cannot announce ORGANIZATION VA {} without organization ID", va.getVaId());
+      return;
+    }
+
+    if (event.newOrganization()) {
+      var organization = organizationRepository.findById(va.getOrganizationId()).orElse(null);
+      if (organization != null) {
+        publishOrganizationOnboarded(organization);
+      }
+    }
+
+    publishVaUpdated(va);
   }
 
   /**
    * Announces a virtual account to Kafka.
-   * <p>
-   * Publishes organization.onboarded if the organization is new, and always publishes
-   * organization.va.updated for the virtual account.
+   *
+   * <p>Always publishes both {@code organization.onboarded} and {@code organization.va.updated}
+   * since this method is intended for manual re-announcements where history is not tracked.
    *
    * @param vaId the virtual account ID to announce
    * @throws NotFoundException if the virtual account is not found
@@ -82,7 +108,6 @@ public class VirtualAccountAnnouncer {
             .findById(vaId)
             .orElseThrow(() -> new NotFoundException("Virtual account not found: " + vaId));
 
-    // Only announce organization virtual accounts
     if (va.getOwnershipType() == AccountOwnershipType.ORGANIZATION) {
       if (va.getOrganizationId() == null || va.getOrganizationId().isBlank()) {
         log.warn("Cannot announce ORGANIZATION VA {} without organization ID", vaId);
@@ -90,15 +115,10 @@ public class VirtualAccountAnnouncer {
       }
 
       var organization = organizationRepository.findById(va.getOrganizationId()).orElse(null);
-
       if (organization != null) {
-        // Check if this is a new organization (created recently)
-        // For simplicity, we'll publish onboarded event for all organizations
-        // In production, you might track whether onboarded was already sent
         publishOrganizationOnboarded(organization);
       }
 
-      // Always publish VA updated event
       publishVaUpdated(va);
     } else {
       log.debug("Skipping announcement for SYSTEM VA: {}", vaId);
@@ -122,15 +142,15 @@ public class VirtualAccountAnnouncer {
                 organization.getCountryIsoCode() != null
                     ? organization.getCountryIsoCode()
                     : "GHA"),
-            null, // primary contact email not available
-            List.of(), // phone numbers not available
+            null,
+            List.of(),
             organization.getStatus().name());
 
     var metadata =
         EventMetadataBuilder.builder()
             .correlationId(eventId)
             .idempotencyKey(idempotencyKey)
-            .tenantId(organization.getOrganizationId())
+            .tenantId(defaultTenantId)
             .build();
 
     var envelope =
@@ -158,7 +178,6 @@ public class VirtualAccountAnnouncer {
           organization.getOrganizationId(),
           e.getMessage(),
           e);
-      // Don't throw - the VA is already persisted, and we can retry later
     }
   }
 
@@ -178,7 +197,7 @@ public class VirtualAccountAnnouncer {
         EventMetadataBuilder.builder()
             .correlationId(eventId)
             .idempotencyKey(idempotencyKey)
-            .tenantId(va.getOrganizationId())
+            .tenantId(defaultTenantId)
             .build();
 
     var envelope =
@@ -205,7 +224,6 @@ public class VirtualAccountAnnouncer {
           va.getVaId(),
           e.getMessage(),
           e);
-      // Don't throw - the VA is already persisted, and we can retry later
     }
   }
 }

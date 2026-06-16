@@ -50,6 +50,9 @@ sequenceDiagram
 - Use Spring's `RestClient` with a dedicated builder (timeouts, error handler).
 - Never log tokens/credentials; cache stores only a token **hash** → verification result.
 - Authorities map to `@PreAuthorize` expressions consistent with the ledger style.
+- Secured controller operations declare `@SecurityRequirement(name = "bearerAuth")` (the scheme
+  defined in Phase 001 `OpenApiConfiguration`) so Swagger UI's "Authorize" button drives them;
+  `/api/v0/auth/login` and the public allow-list are left unsecured in the OpenAPI doc.
 
 ## Non-Functional Requirements
 - Verification cache cuts introspection calls (short TTL, e.g. 30–60s) without granting access

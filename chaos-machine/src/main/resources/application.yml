@@ -4,6 +4,8 @@ spring:
   threads:
     virtual:
       enabled: true
+  config:
+    import: optional:classpath:chaos-bootstrap.yml
   datasource:
     url: jdbc:sqlite:${chaos.datasource.path:./data/chaos.db}
     driver-class-name: org.sqlite.JDBC
@@ -56,6 +58,7 @@ springdoc:
 chaos:
   datasource:
     path: ${CHAOS_DATASOURCE_PATH:./data/chaos.db}
+  default-tenant-id: ${CHAOS_DEFAULT_TENANT_ID:org_system}
   kafka:
     cluster-label: ${CHAOS_TARGET_LABEL:local}
   topics:
@@ -70,6 +73,7 @@ chaos:
     organization-va-settlement-completed: organization.va.settlement.completed
     organization-va-settlement-failed: organization.va.settlement.failed
     collection-completed: collection.completed
+    disbursement-completed: disbursement.completed
 
 auth-service:
   base-url: ${AUTH_SERVICE_BASE_URL:}

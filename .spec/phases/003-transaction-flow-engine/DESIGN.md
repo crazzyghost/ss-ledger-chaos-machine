@@ -23,7 +23,8 @@ auditable, controllable service.
 
 ## Architecture Impact
 Adds `com.softspark.chaos.flow`, `.batch`, `.history`. Defines payload records
-`flow/model/v1/*` (the 11 schemas), the `FlowType`/`SlotName` enums (shared with Phase 002),
+`flow/model/v1/*` (the 12 schemas, incl. proposed `disbursement.completed`), the
+`FlowType`/`SlotName` enums (shared with Phase 002),
 SQLite tables `publish_record`, `batch_run`, `batch_row`. Consumes Phase 001 publisher +
 Phase 002 resolution. Surfaced by Phase 005 transactions + chaos pages.
 

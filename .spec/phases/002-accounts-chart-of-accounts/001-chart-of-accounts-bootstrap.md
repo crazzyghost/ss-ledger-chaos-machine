@@ -1,5 +1,11 @@
 # Task 001 - Chart of Accounts Bootstrap
 
+> ⚠️ **Superseded by [Phase 025](../025-chart-of-accounts-http-bootstrap/DESIGN.md).** This task
+> (config-seeded VA UUIDs) shipped with Phase 002. The VA ids are now **provisioned in and
+> returned by the ledger over HTTP** rather than seeded from config; account codes must be
+> **unique**. Treat the role/code catalog and flow-slot seeding below as still valid, but read
+> Phase 025 for the authoritative bootstrap mechanism and persistence.
+
 ## Functional Requirements
 - On startup, seed a preconfigured **chart of accounts**: the system **account roles**, each
   with an account code, category, currency, and a default virtual-account UUID — plus the

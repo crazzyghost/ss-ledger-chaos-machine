@@ -9,6 +9,9 @@
 - [ ] `./gradlew build` succeeds on a JDK 25 toolchain.
 - [ ] `./gradlew bootRun` starts the app; `GET /actuator/health` returns `UP`.
 - [ ] Swagger UI is served (springdoc) and lists an empty/sample API.
+- [ ] Swagger declares a **`bearerAuth`** HTTP security scheme (JWT) so the UI/operators can
+      authorize requests with a token; an "Authorize" button is present and secured operations
+      send `Authorization: Bearer …`.
 - [ ] `record-builder` annotation processing works (a sample `@RecordBuilder` compiles).
 - [ ] A separate `integration-test` source set + `integrationTest` task exist (mirrors ledger).
 - [ ] Multi-stage Dockerfile builds a runnable image on `eclipse-temurin:25-*`.
@@ -71,7 +74,8 @@ Files to create:
 - `src/main/java/com/softspark/chaos/Application.java` (`@SpringBootApplication`)
 - `src/main/resources/application.yml` (+ `-dev`, `-staging`, `-prod`)
 - `src/main/resources/logback-spring.xml` (console in dev/test, JSON via logstash encoder in prod)
-- `config/OpenApiConfiguration.java`, `config/AsyncConfiguration.java` (virtual-thread executor)
+- `config/OpenApiConfiguration.java` — `@OpenAPIDefinition` + `@SecurityScheme(name="bearerAuth",
+  type=HTTP, scheme="bearer", bearerFormat="JWT")` (mirrors the ledger); `config/AsyncConfiguration.java` (virtual-thread executor)
 - `Dockerfile` (multi-stage, non-root `chaos` user, EXPOSE 27100, healthcheck `/actuator/health`)
 - `.dockerignore`, `.gitignore` (ignore `data/`, `build/`, `.idea/`)
 Reuse the ledger's `build.gradle` jacoco/integrationTest task wiring; drop Postgres-only bits.

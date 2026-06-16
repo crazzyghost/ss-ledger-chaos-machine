@@ -7,7 +7,7 @@
   (Task 003) execution.
 
 ## Acceptance Criteria
-- [ ] A `FlowType` enum enumerates all 11 flows; each maps to a topic, a `source`, and a payload type.
+- [ ] A `FlowType` enum enumerates all 12 flows; each maps to a topic, a `source`, and a payload type.
 - [ ] A `FlowBuilder<T>` per flow turns a `FlowRequest` into `EventEnvelope<T>`, filling slots
       via Phase 002 resolution precedence.
 - [ ] `FlowEngine.execute(FlowExecution)` resolves → builds → (chaos) → publishes → records
@@ -25,7 +25,7 @@ public enum FlowType {
   TOPUP_CONFIRMED, TRANSFER_REQUESTED,
   TREASURY_PREFUND_COMPLETED, TREASURY_SWEEP_COMPLETED, TREASURY_TRANSFER_COMPLETED,
   SETTLEMENT_INITIATED, SETTLEMENT_COMPLETED, SETTLEMENT_FAILED,
-  COLLECTION_COMPLETED;
+  COLLECTION_COMPLETED, DISBURSEMENT_COMPLETED;
 }
 
 public interface FlowBuilder<T> {
@@ -79,7 +79,7 @@ Phase 001 (publisher/envelope), Phase 002 (slot resolution, account model).
 - *Hidden coupling between flows* → builders are independent; shared logic in `FlowContext`/helpers.
 
 ## Testing Strategy
-- Registry completeness test (all 11 types covered).
+- Registry completeness test (all 12 types covered).
 - Per-builder unit tests of envelope construction (vs. fixtures) — bulk in Task 002.
 - Engine test: resolve→build→publish→record happy path with a stub publisher + history writer.
 

@@ -4,6 +4,7 @@ import com.softspark.chaos.base.ApiError;
 import com.softspark.chaos.base.ErrorDescription;
 import com.softspark.chaos.exception.HttpException;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,26 @@ public class GlobalExceptionHandler {
     String requestId = getRequestId();
     List<ErrorDescription> errors =
         ex.getBindingResult().getFieldErrors().stream().map(this::toErrorDescription).toList();
+    ApiError error = new ApiError(requestId, "Validation failed", errors);
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+  }
+
+  /**
+   * Handles {@link ConstraintViolationException} thrown when method-parameter or path-variable
+   * constraints are violated. Returns 400 with field-level error details.
+   *
+   * @param ex      the constraint violation exception
+   * @param request the current HTTP request
+   * @return a 400 Bad Request response containing an {@link ApiError}
+   */
+  @ExceptionHandler(ConstraintViolationException.class)
+  public ResponseEntity<ApiError> handleConstraintViolation(
+      ConstraintViolationException ex, HttpServletRequest request) {
+    String requestId = getRequestId();
+    List<ErrorDescription> errors =
+        ex.getConstraintViolations().stream()
+            .map(cv -> new ErrorDescription(cv.getPropertyPath().toString(), cv.getMessage()))
+            .toList();
     ApiError error = new ApiError(requestId, "Validation failed", errors);
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
   }

@@ -2,7 +2,7 @@
 
 ## Functional Requirements
 - Provide the byte-compatible `EventEnvelope<T>` contract the ledger consumes, a configured
-  durable Kafka producer, a typed topic catalog for all 11 inbound topics, and a thin
+  durable Kafka producer, a typed topic catalog for all 12 inbound topics, and a thin
   `ChaosEventPublisher` used by Phase 003. (See [ADR-004](../../decisions/004-event-envelope-and-kafka-publishing.md).)
 
 ## Acceptance Criteria
@@ -11,8 +11,9 @@
 - [ ] JSON is snake_case; no Jackson type headers are written
       (`spring.json.add.type.headers=false`).
 - [ ] Producer uses `acks=all`, `enable.idempotence=true`, bounded `delivery.timeout.ms`.
-- [ ] `TopicCatalog` exposes typed constants for all 11 topics; topic names match the ledger's
-      `_local-dev-common.sh` defaults and are overridable via config.
+- [ ] `TopicCatalog` exposes typed constants for all 12 topics; topic names match the ledger's
+      `_local-dev-common.sh` defaults (plus the proposed `disbursement.completed`) and are
+      overridable via config.
 - [ ] `ChaosEventPublisher.publish(topic, key, envelope)` returns a result with the broker
       offset/partition and surfaces failures as a typed exception.
 
@@ -38,7 +39,8 @@ public record EventMetadata(String correlationId, String idempotencyKey, String 
   binding so each topic name is overridable; defaults match the ledger:
   `organization.onboarded`, `organization.va.updated`, `organization.topup.confirmed`,
   `organization.transfer.requested`, `organization.treasury.{prefund,sweep,transfer}.completed`,
-  `organization.va.settlement.{initiated,completed,failed}`, `collection.completed`.
+  `organization.va.settlement.{initiated,completed,failed}`, `collection.completed`, and the
+  proposed `disbursement.completed` (Phase 003).
 - `kafka/ChaosEventPublisher`: wraps `KafkaTemplate`, sets the key (aggregate id), measures
   with Micrometer, maps send failures to `EventPublishException`.
 - Time: `timestamp` serialized as `2026-05-24T10:00:00Z` (matches samples). `eventId`/ids via ULID.

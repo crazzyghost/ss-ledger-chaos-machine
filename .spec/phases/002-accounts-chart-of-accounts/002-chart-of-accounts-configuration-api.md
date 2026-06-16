@@ -21,6 +21,7 @@ Slot model per flow (the resolvable inputs an operator may pin):
 | Flow | Slots |
 |---|---|
 | `COLLECTION_COMPLETED` | `source` (PLATFORM_FLOAT*), `destination` (merchant org VA), `fee` (PLATFORM_FEE/PROVIDER_FEE) |
+| `DISBURSEMENT_COMPLETED` | `source` (merchant org VA), `destination` (PLATFORM_FLOAT*), `fee` (PLATFORM_FEE/PROVIDER_FEE) |
 | `SETTLEMENT_INITIATED` | `virtual_account` (client VA) |
 | `SETTLEMENT_COMPLETED` | `source` (client VA), `destination` (SETTLEMENT_ACCOUNT) |
 | `SETTLEMENT_FAILED` | `virtual_account` (client VA) |
