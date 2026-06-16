@@ -3,6 +3,7 @@ package com.softspark.chaos.account.model;
 import com.softspark.chaos.account.enumeration.AccountCategory;
 import com.softspark.chaos.account.enumeration.AccountRole;
 import com.softspark.chaos.account.enumeration.Channel;
+import com.softspark.chaos.account.enumeration.ProvisioningStatus;
 import com.softspark.chaos.base.AuditableEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -39,6 +40,16 @@ public class AccountRoleEntity extends AuditableEntity {
 
   @Column(name = "default_va_id")
   private String defaultVaId;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "provisioning_status", nullable = false)
+  private ProvisioningStatus provisioningStatus = ProvisioningStatus.PENDING;
+
+  @Column(name = "provisioned_at")
+  private String provisionedAt;
+
+  @Column(name = "last_error", columnDefinition = "TEXT")
+  private String lastError;
 
   public AccountRole getRole() {
     return role;
@@ -86,5 +97,29 @@ public class AccountRoleEntity extends AuditableEntity {
 
   public void setDefaultVaId(String defaultVaId) {
     this.defaultVaId = defaultVaId;
+  }
+
+  public ProvisioningStatus getProvisioningStatus() {
+    return provisioningStatus;
+  }
+
+  public void setProvisioningStatus(ProvisioningStatus provisioningStatus) {
+    this.provisioningStatus = provisioningStatus;
+  }
+
+  public String getProvisionedAt() {
+    return provisionedAt;
+  }
+
+  public void setProvisionedAt(String provisionedAt) {
+    this.provisionedAt = provisionedAt;
+  }
+
+  public String getLastError() {
+    return lastError;
+  }
+
+  public void setLastError(String lastError) {
+    this.lastError = lastError;
   }
 }

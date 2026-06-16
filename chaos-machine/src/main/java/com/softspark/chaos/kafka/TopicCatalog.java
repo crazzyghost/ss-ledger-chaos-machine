@@ -1,5 +1,6 @@
 package com.softspark.chaos.kafka;
 
+import com.softspark.chaos.flow.model.FlowType;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -132,5 +133,29 @@ public class TopicCatalog {
    */
   public void setDisbursementCompleted(String disbursementCompleted) {
     this.disbursementCompleted = disbursementCompleted;
+  }
+
+  /**
+   * Resolves the Kafka topic name for the given {@link FlowType}.
+   *
+   * @param flowType the flow type to resolve
+   * @return the Kafka topic name
+   * @throws IllegalArgumentException if the flow type has no mapped topic
+   */
+  public String topicFor(FlowType flowType) {
+    return switch (flowType) {
+      case ORGANIZATION_ONBOARDED -> organizationOnboarded;
+      case ORGANIZATION_VA_UPDATED -> organizationVaUpdated;
+      case TOPUP_CONFIRMED -> organizationTopupConfirmed;
+      case TRANSFER_REQUESTED -> organizationTransferRequested;
+      case TREASURY_PREFUND_COMPLETED -> organizationTreasuryPrefundCompleted;
+      case TREASURY_SWEEP_COMPLETED -> organizationTreasurySweepCompleted;
+      case TREASURY_TRANSFER_COMPLETED -> organizationTreasuryTransferCompleted;
+      case SETTLEMENT_INITIATED -> organizationVaSettlementInitiated;
+      case SETTLEMENT_COMPLETED -> organizationVaSettlementCompleted;
+      case SETTLEMENT_FAILED -> organizationVaSettlementFailed;
+      case COLLECTION_COMPLETED -> collectionCompleted;
+      case DISBURSEMENT_COMPLETED -> disbursementCompleted;
+    };
   }
 }

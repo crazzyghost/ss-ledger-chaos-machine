@@ -22,6 +22,14 @@ public class InstantStringConverter implements AttributeConverter<Instant, Strin
 
   @Override
   public Instant convertToEntityAttribute(String dbData) {
-    return dbData == null ? null : Instant.parse(dbData);
+    if (dbData == null) {
+      return null;
+    }
+    try {
+      return Instant.parse(dbData);
+    } catch (java.time.format.DateTimeParseException ignored) {
+      // Rows written by earlier code stored epoch-millis as plain longs; parse those too.
+      return Instant.ofEpochMilli(Long.parseLong(dbData));
+    }
   }
 }

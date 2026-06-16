@@ -12,6 +12,7 @@ import com.softspark.chaos.account.dto.ChartOfAccountsRoleResponse;
 import com.softspark.chaos.account.dto.UpdateRoleRequest;
 import com.softspark.chaos.account.enumeration.AccountCategory;
 import com.softspark.chaos.account.enumeration.AccountRole;
+import com.softspark.chaos.account.enumeration.ProvisioningStatus;
 import com.softspark.chaos.account.service.ChartOfAccountsService;
 import com.softspark.chaos.advice.GlobalExceptionHandler;
 import com.softspark.chaos.config.SecurityConfiguration;
@@ -48,7 +49,9 @@ class ChartOfAccountsControllerTest {
         AccountCategory.ASSET,
         "GHS",
         null,
-        "VA-FLOAT");
+        "VA-FLOAT",
+        "VA-FLOAT",
+        ProvisioningStatus.PROVISIONED);
   }
 
   // ── GET /api/v0/chart-of-accounts ─────────────────────────────────────────
@@ -87,7 +90,9 @@ class ChartOfAccountsControllerTest {
               AccountCategory.ASSET,
               "GHS",
               null,
-              "VA-NEW");
+              "VA-NEW",
+              "VA-NEW",
+              ProvisioningStatus.PROVISIONED);
       when(chartOfAccountsService.updateRole(any(), any())).thenReturn(updated);
 
       var req = new UpdateRoleRequest("VA-NEW", "GHS");

@@ -17,9 +17,11 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 
 /**
  * Kafka producer configuration for the chaos machine.
- * <p>
- * Configures a durable, idempotent producer with JSON serialization that produces
- * snake_case field names and ISO-8601 timestamps matching the ledger's expectations.
+ *
+ * <p>Configures a durable, idempotent producer with JSON serialization that produces snake_case
+ * field names and ISO-8601 timestamps matching the ledger's expectations. Also registers a raw
+ * {@link KafkaTemplate}{@code <String, String>} bean for malformed/chaos payloads that bypass JSON
+ * serialization.
  */
 @Configuration
 public class ProducerConfiguration {
@@ -56,5 +58,27 @@ public class ProducerConfiguration {
   public KafkaTemplate<String, Object> kafkaTemplate(
       ProducerFactory<String, Object> producerFactory) {
     return new KafkaTemplate<>(producerFactory);
+  }
+
+  /**
+   * Creates a raw string-to-string {@link KafkaTemplate} for chaos scenarios that require
+   * publishing pre-serialized or intentionally malformed JSON payloads.
+   *
+   * @return the raw Kafka template
+   */
+  @Bean
+  public KafkaTemplate<String, String> rawKafkaTemplate() {
+    Map<String, Object> configProps = new HashMap<>();
+    configProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+    configProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+    configProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
+    configProps.put(ProducerConfig.ACKS_CONFIG, "all");
+    configProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
+    configProps.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120000);
+
+    DefaultKafkaProducerFactory<String, String> factory =
+        new DefaultKafkaProducerFactory<>(
+            configProps, new StringSerializer(), new StringSerializer());
+    return new KafkaTemplate<>(factory);
   }
 }

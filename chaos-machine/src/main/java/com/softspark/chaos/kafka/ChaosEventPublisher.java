@@ -12,9 +12,11 @@ import org.springframework.stereotype.Component;
 
 /**
  * High-level publisher for chaos events.
- * <p>
- * Wraps the Kafka template with metrics, logging, and error handling. All event
- * publishing should go through this component to ensure consistent behavior.
+ *
+ * <p>Wraps the Kafka template with metrics, logging, and error handling. All event publishing
+ * should go through this component to ensure consistent behavior. Provides a {@link
+ * #publishRaw(String, String, String)} overload for chaos scenarios that require pre-serialized or
+ * intentionally malformed JSON payloads.
  */
 @Component
 public class ChaosEventPublisher {
@@ -22,19 +24,23 @@ public class ChaosEventPublisher {
   private static final Logger log = LoggerFactory.getLogger(ChaosEventPublisher.class);
 
   private final KafkaTemplate<String, Object> kafkaTemplate;
+  private final KafkaTemplate<String, String> rawKafkaTemplate;
   private final MeterRegistry meterRegistry;
 
   public ChaosEventPublisher(
-      KafkaTemplate<String, Object> kafkaTemplate, MeterRegistry meterRegistry) {
+      KafkaTemplate<String, Object> kafkaTemplate,
+      KafkaTemplate<String, String> rawKafkaTemplate,
+      MeterRegistry meterRegistry) {
     this.kafkaTemplate = kafkaTemplate;
+    this.rawKafkaTemplate = rawKafkaTemplate;
     this.meterRegistry = meterRegistry;
   }
 
   /**
    * Publishes an event envelope to the specified topic.
    *
-   * @param topic    the Kafka topic name
-   * @param key      the message key (typically an aggregate ID)
+   * @param topic the Kafka topic name
+   * @param key the message key (typically an aggregate ID)
    * @param envelope the event envelope to publish
    * @return a PublishResult with the broker offset and partition on success
    * @throws EventPublishException if publishing fails
@@ -92,9 +98,50 @@ public class ChaosEventPublisher {
   }
 
   /**
+   * Publishes a raw JSON string to the specified topic, bypassing object serialization.
+   *
+   * <p>Used for chaos scenarios (e.g., malformed payloads) where the payload must not be
+   * processed by the standard JSON serializer.
+   *
+   * @param topic the Kafka topic name
+   * @param key the message key
+   * @param rawJson the raw JSON string to publish
+   * @return a PublishResult with the broker offset and partition on success
+   * @throws EventPublishException if publishing fails
+   */
+  public PublishResult publishRaw(String topic, String key, String rawJson) {
+    try {
+      CompletableFuture<SendResult<String, String>> future =
+          rawKafkaTemplate.send(new ProducerRecord<>(topic, key, rawJson));
+      SendResult<String, String> result = future.join();
+      RecordMetadata metadata = result.getRecordMetadata();
+
+      meterRegistry
+          .counter(
+              "chaos.events.published", "topic", topic, "event_type", "raw", "status", "success")
+          .increment();
+
+      log.info(
+          "Published raw event to topic {} partition {} offset {}",
+          topic,
+          metadata.partition(),
+          metadata.offset());
+
+      return new PublishResult(metadata.offset(), metadata.partition());
+    } catch (Exception e) {
+      meterRegistry
+          .counter(
+              "chaos.events.published", "topic", topic, "event_type", "raw", "status", "failure")
+          .increment();
+      log.error("Failed to publish raw event to topic {}: {}", topic, e.getMessage(), e);
+      throw new EventPublishException("Failed to publish raw event to topic " + topic, e);
+    }
+  }
+
+  /**
    * Result of a successful publish operation.
    *
-   * @param offset    the broker offset where the message was stored
+   * @param offset the broker offset where the message was stored
    * @param partition the partition where the message was stored
    */
   public record PublishResult(long offset, int partition) {}

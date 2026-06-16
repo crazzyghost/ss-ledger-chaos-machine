@@ -1,42 +1,28 @@
 package com.softspark.chaos.account.bootstrap;
 
-import com.softspark.chaos.account.enumeration.AccountCategory;
 import com.softspark.chaos.account.enumeration.AccountRole;
-import com.softspark.chaos.account.enumeration.Channel;
 import com.softspark.chaos.flow.model.FlowType;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Configuration properties for bootstrap data.
- * <p>
- * Loads account roles, default virtual accounts, and flow slot configurations from
- * chaos-bootstrap.yml to seed the database on application startup.
+ * Configuration properties for the chart-of-accounts bootstrap process.
+ *
+ * <p>Loaded from {@code chaos-bootstrap.yml} (imported as optional classpath resource). Contains
+ * the system-account catalog and flow-slot seed data used during startup provisioning.
+ *
+ * @param provisionOnStartup  when {@code true}, the runner calls the ledger HTTP API on startup
+ * @param systemAccounts      ordered list of system accounts to provision
+ * @param flowSlots           flow-slot-to-role mappings to seed in the local database
  */
 @ConfigurationProperties(prefix = "chaos.bootstrap")
 public record BootstrapProperties(
-    List<AccountRoleConfig> accountRoles, List<FlowSlotConfigSeed> flowSlots) {
+    boolean provisionOnStartup,
+    List<SystemAccountDefinition> systemAccounts,
+    List<FlowSlotConfigSeed> flowSlots) {
 
   /**
-   * Configuration for a single account role.
-   *
-   * @param role         the account role enum value
-   * @param accountCode  the account code
-   * @param category     the account category
-   * @param currency     the currency code (ISO-4217)
-   * @param channel      optional channel
-   * @param defaultVaId  the stable default virtual account ID
-   */
-  public record AccountRoleConfig(
-      AccountRole role,
-      String accountCode,
-      AccountCategory category,
-      String currency,
-      Channel channel,
-      String defaultVaId) {}
-
-  /**
-   * Configuration for a flow slot mapping.
+   * Seed data for a single flow-slot configuration.
    *
    * @param flowType    the transaction flow type
    * @param slotName    the slot name within the flow

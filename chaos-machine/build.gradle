@@ -56,6 +56,7 @@ dependencies {
     implementation 'net.logstash.logback:logstash-logback-encoder:8.1'
     implementation 'org.xerial:sqlite-jdbc'
     implementation 'org.hibernate.orm:hibernate-community-dialects'
+    implementation 'org.apache.commons:commons-csv:1.12.0'
 
     annotationProcessor 'io.soabase.record-builder:record-builder-processor:52'
     compileOnly 'io.soabase.record-builder:record-builder-core:52'

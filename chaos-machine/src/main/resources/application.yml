@@ -32,10 +32,10 @@ spring:
       properties:
         delivery.timeout.ms: 120000
         spring.json.add.type.headers: false
-  security:
-    user:
-      name: admin
-      password: admin
+#  security:
+#    user:
+#      name: admin
+#      password: admin
 
 server:
   port: ${SERVER_PORT:27100}
@@ -61,6 +61,19 @@ chaos:
   default-tenant-id: ${CHAOS_DEFAULT_TENANT_ID:org_system}
   kafka:
     cluster-label: ${CHAOS_TARGET_LABEL:local}
+  history:
+    queue-capacity: ${CHAOS_HISTORY_QUEUE_CAPACITY:10000}
+    retention-days: ${CHAOS_HISTORY_RETENTION_DAYS:30}
+  batch:
+    max-rows: ${CHAOS_BATCH_MAX_ROWS:50000}
+    queue-capacity: ${CHAOS_BATCH_QUEUE_CAPACITY:1000}
+    workers: ${CHAOS_BATCH_WORKERS:20}
+    default-max-rate: ${CHAOS_BATCH_DEFAULT_MAX_RATE:100}
+  limits:
+    max-duplicates: ${CHAOS_LIMITS_MAX_DUPLICATES:10}
+    max-burst: ${CHAOS_LIMITS_MAX_BURST:100}
+    max-rate-per-second: ${CHAOS_LIMITS_MAX_RATE_PER_SECOND:1000}
+    max-delay-ms: ${CHAOS_LIMITS_MAX_DELAY_MS:30000}
   topics:
     organization-onboarded: organization.onboarded
     organization-va-updated: organization.va.updated
@@ -74,6 +87,9 @@ chaos:
     organization-va-settlement-failed: organization.va.settlement.failed
     collection-completed: collection.completed
     disbursement-completed: disbursement.completed
+  bootstrap:
+    reconcile-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_DELAY_MS:60000}
+    reconcile-initial-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_INITIAL_DELAY_MS:30000}
 
 auth-service:
   base-url: ${AUTH_SERVICE_BASE_URL:}
@@ -84,3 +100,11 @@ auth-service:
 
 ledger:
   base-url: ${LEDGER_BASE_URL:http://localhost:27000}
+  accounts-path: ${LEDGER_ACCOUNTS_PATH:/api/v0/accounts}
+  timeouts:
+    connect-ms: ${LEDGER_CONNECT_TIMEOUT_MS:5000}
+    read-ms: ${LEDGER_READ_TIMEOUT_MS:30000}
+  retry:
+    max-attempts: ${LEDGER_RETRY_MAX_ATTEMPTS:3}
+    initial-delay-ms: ${LEDGER_RETRY_INITIAL_DELAY_MS:1000}
+  auth-token: ${CLIENT_TOKEN}

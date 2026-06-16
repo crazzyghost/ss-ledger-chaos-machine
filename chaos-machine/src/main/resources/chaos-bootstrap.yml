@@ -1,38 +1,45 @@
 chaos:
   bootstrap:
-    account-roles:
+    provision-on-startup: true
+    system-accounts:
       - role: SETTLEMENT_ACCOUNT
         accountCode: ASSET.BANK.SETTLEMENT.0000000000001.GHS
-        category: ASSET
+        accountName: Bank Settlement Account
+        accountCategory: ASSET
         currency: GHS
-        defaultVaId: 01J9YQKM8D0000000000SETTLE
+        ownershipType: SYSTEM
       - role: PLATFORM_FLOAT
         accountCode: ASSET.PLATFORM.FLOAT
-        category: ASSET
+        accountName: Platform Float
+        accountCategory: ASSET
         currency: GHS
-        defaultVaId: 01J9YQKM8D000000000PLTFLOAT
+        ownershipType: SYSTEM
       - role: PLATFORM_FLOAT_MTN
         accountCode: ASSET.PLATFORM.FLOAT.MTN
-        category: ASSET
+        accountName: Platform Float - MTN
+        accountCategory: ASSET
         currency: GHS
-        channel: MTN
-        defaultVaId: 01J9YQKM8D00000000PLTFLTMTN
+        ownershipType: SYSTEM
+        parentRole: PLATFORM_FLOAT
       - role: PLATFORM_FLOAT_TELECEL
         accountCode: ASSET.PLATFORM.FLOAT.TELECEL
-        category: ASSET
+        accountName: Platform Float - Telecel
+        accountCategory: ASSET
         currency: GHS
-        channel: TELECEL
-        defaultVaId: 01J9YQKM8D000000PLTFLTTELEC
+        ownershipType: SYSTEM
+        parentRole: PLATFORM_FLOAT
       - role: PLATFORM_FEE
         accountCode: REVENUE.PLATFORM.FEE
-        category: REVENUE
+        accountName: Platform Fee Revenue
+        accountCategory: REVENUE
         currency: GHS
-        defaultVaId: 01J9YQKM8D000000PLATFORMFEE
+        ownershipType: SYSTEM
       - role: PROVIDER_FEE
         accountCode: REVENUE.PROVIDER.FEE
-        category: REVENUE
+        accountName: Provider Fee Revenue
+        accountCategory: REVENUE
         currency: GHS
-        defaultVaId: 01J9YQKM8D000000PROVIDERFEE
+        ownershipType: SYSTEM
     flow-slots:
       - flowType: COLLECTION_COMPLETED
         slotName: source
