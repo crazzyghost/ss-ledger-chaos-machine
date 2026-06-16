@@ -48,6 +48,7 @@ public class LedgerRestClientConfiguration {
         .baseUrl(ledgerProperties.baseUrl())
         .defaultHeader("Authorization", "Bearer %s".formatted(ledgerProperties.authToken()))
         .requestFactory(factory)
+        .requestInterceptor(new LoggingClientHttpRequestInterceptor("ledger-provisioning"))
         .defaultStatusHandler(
             HttpStatusCode::is5xxServerError,
             (request, response) -> {

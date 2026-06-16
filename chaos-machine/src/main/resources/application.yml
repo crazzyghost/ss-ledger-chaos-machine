@@ -32,10 +32,10 @@ spring:
       properties:
         delivery.timeout.ms: 120000
         spring.json.add.type.headers: false
-#  security:
-#    user:
-#      name: admin
-#      password: admin
+  security:
+    user:
+      name: admin
+      password: admin
 
 server:
   port: ${SERVER_PORT:27100}
@@ -93,8 +93,10 @@ chaos:
 
 auth-service:
   base-url: ${AUTH_SERVICE_BASE_URL:}
-  login-uri: ${AUTH_SERVICE_LOGIN_URI:}
-  token-verification-uri: ${AUTH_SERVICE_TOKEN_VERIFICATION_URI:}
+  login-uri: ${AUTH_SERVICE_LOGIN_URI:/realm/login}
+  token-verification-uri: ${AUTH_SERVICE_TOKEN_VERIFICATION_URI:/realm/access-token/verify}
+  realm-id: ${AUTH_SERVICE_REALM_ID:}
+  verification-cache-ttl-seconds: ${AUTH_VERIFICATION_CACHE_TTL_SECONDS:30}
   client-auth:
     enabled: ${AUTH_CLIENT_AUTH_ENABLED:false}
 
@@ -107,4 +109,11 @@ ledger:
   retry:
     max-attempts: ${LEDGER_RETRY_MAX_ATTEMPTS:3}
     initial-delay-ms: ${LEDGER_RETRY_INITIAL_DELAY_MS:1000}
-  auth-token: ${CLIENT_TOKEN}
+  auth-token: ${LEDGER_AUTH_TOKEN:}
+  proxy:
+    forward-token: ${LEDGER_PROXY_FORWARD_TOKEN:true}
+    service-token: ${LEDGER_PROXY_SERVICE_TOKEN:}
+    circuit-breaker:
+      failure-threshold: ${LEDGER_CB_FAILURE_THRESHOLD:5}
+      success-threshold: ${LEDGER_CB_SUCCESS_THRESHOLD:2}
+      open-duration-ms: ${LEDGER_CB_OPEN_DURATION_MS:30000}

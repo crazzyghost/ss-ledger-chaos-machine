@@ -14,3 +14,21 @@ chaos:
   bootstrap:
     provision-on-startup: false
     reconcile-initial-delay-ms: 9999999
+
+auth-service:
+  base-url: http://localhost:19999
+  login-uri: /realm/login
+  token-verification-uri: /realm/access-token/verify
+  realm-id: ""
+  verification-cache-ttl-seconds: 30
+  client-auth:
+    enabled: false
+
+ledger:
+  proxy:
+    forward-token: true
+    service-token: ""
+    circuit-breaker:
+      failure-threshold: 5
+      success-threshold: 2
+      open-duration-ms: 30000
