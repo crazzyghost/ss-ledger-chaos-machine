@@ -1,5 +1,14 @@
 # Task 003 - Bootstrap Orchestration & Persistence
 
+> **⚠️ Persistence behavior superseded by [Phase 009 / Task 003](../009-ledger-owned-virtual-accounts/003-bootstrap-rework-http-only.md)
+> ([ADR-011](../../decisions/011-ledger-owned-virtual-accounts-via-kafka-consumer.md)).** The
+> bootstrap no longer persists `virtual_account` rows from the HTTP create response. It now
+> **checks whether each `account_code` already exists in the VA table, issues `POST /api/v0/accounts`
+> to the ledger if absent, and returns without blocking**; the VA row is materialized by the
+> `ledger.account.created` consumer, which then flips the role to `PROVISIONED`. The catalog,
+> topological ordering, idempotency, health, and reconcile logic below still apply; only the *who
+> writes the VA row* changes (consumer, not runner).
+
 ## Functional Requirements
 - Orchestrate startup provisioning: validate the catalog, provision each SYSTEM account in the
   ledger **in dependency order**, and persist the resulting `role → ledger accountId` mapping

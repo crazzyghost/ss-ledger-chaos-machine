@@ -1,5 +1,15 @@
 # Task 004 - Virtual Account Creation via Kafka
 
+> **⚠️ Superseded by [Phase 009](../009-ledger-owned-virtual-accounts/DESIGN.md)
+> ([ADR-011](../../decisions/011-ledger-owned-virtual-accounts-via-kafka-consumer.md)).** This task
+> modeled "VA creation via Kafka" as the chaos machine *publishing* `organization.onboarded` /
+> `organization.va.updated` to make the ledger materialize VAs. The ledger in fact owns VAs and
+> publishes a dedicated **`ledger.account.created`** event; the chaos machine now **consumes** it to
+> create the VA projection, and VA creation issues `POST /api/v0/accounts` to the ledger. The
+> `VirtualAccountAnnouncer` create/announce path described below is retired (the manual chaos
+> fault-injection flows for `organization.*` remain in the flow runner). Read Phase 009 for the
+> current design; the requirements below are historical.
+
 ## Functional Requirements
 - Allow virtual accounts / organizations to be **created via Kafka** by publishing the events
   the ledger consumes to materialize them. There is no dedicated `va.created` inbound topic;

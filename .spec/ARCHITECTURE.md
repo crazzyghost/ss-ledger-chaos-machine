@@ -29,10 +29,13 @@ It is **not** a ledger. It owns no journals or balances. It is a *driver* + *gat
 | API style | REST under `/api/v0`, records as DTOs, `record-builder` (no Lombok) | mirrors ledger |
 | API docs | springdoc OpenAPI + Swagger UI with a **`bearerAuth`** HTTP security scheme | mirrors ledger |
 | Chart of accounts | **Provisioned in the ledger over HTTP**; VA ids are ledger-assigned (not config) | [Phase 007](phases/007-chart-of-accounts-http-bootstrap/DESIGN.md) |
-| Org reference data | **Countries & org types** are first-class tables (UUID v4 ids); orgs FK them | [Phase 008](phases/008-organization-onboarding/DESIGN.md) ([ADR-008](decisions/008-organization-onboarding-domain-model.md), [ADR-010](decisions/010-uuid-v4-ids-for-organization-domain.md)) |
-| Org onboarding | Creating an org writes a **transactional outbox** row → relay publishes `organization.onboarded` | [Phase 008](phases/008-organization-onboarding/DESIGN.md) ([ADR-009](decisions/009-transactional-outbox-for-organization-onboarded.md)) |
+| **Virtual accounts** | **The ledger owns VAs**; the chaos `virtual_account` table is a **projection** of the `ledger.account.created` Kafka event (chaos's first consumer). VA creation + CoA bootstrap issue HTTP to the ledger and never persist VAs directly | [Phase 009](phases/009-ledger-owned-virtual-accounts/DESIGN.md) ([ADR-011](decisions/011-ledger-owned-virtual-accounts-via-kafka-consumer.md)) |
+| Org reference data | **Countries & org types** are first-class tables (UUID v4 ids); orgs FK them. **Currencies** are a managed table (UUID id + ISO-4217 code); `country` has a `primary_currency`; **supported countries** are a separate curated table driving the onboarding form | [Phase 008](phases/008-organization-onboarding/DESIGN.md) + [Phase 010](phases/010-currencies-and-supported-countries/DESIGN.md) ([ADR-008](decisions/008-organization-onboarding-domain-model.md), [ADR-010](decisions/010-uuid-v4-ids-for-organization-domain.md), [ADR-012](decisions/012-currency-and-supported-country-reference-model.md)) |
+| Reference-data seeding | **Countries + currencies pre-seeded at startup from the external [restcountries.com](https://restcountries.com/) API** (async, seed-if-empty, degrade-on-failure); manual entries + `POST /countries/refresh` | [Phase 010](phases/010-currencies-and-supported-countries/DESIGN.md) ([ADR-013](decisions/013-seed-countries-and-currencies-from-restcountries-api.md)) |
+| Org onboarding | Creating an org writes a **transactional outbox** row → relay publishes `organization.onboarded` (now incl. top-level `currency {id, code}` from the country's primary currency) | [Phase 008](phases/008-organization-onboarding/DESIGN.md) + [Phase 010](phases/010-currencies-and-supported-countries/DESIGN.md) ([ADR-009](decisions/009-transactional-outbox-for-organization-onboarded.md), [ADR-012](decisions/012-currency-and-supported-country-reference-model.md)) |
 | Topology | Backend is the **single gateway** for the UI | user-confirmed ([ADR-003](decisions/003-backend-as-single-api-gateway.md)) |
-| Eventing | `EventEnvelope<T>` snake_case + `KafkaTemplate` producer | mirrors ledger ([ADR-004](decisions/004-event-envelope-and-kafka-publishing.md)) |
+| Eventing (out) | `EventEnvelope<T>` snake_case + `KafkaTemplate` producer | mirrors ledger ([ADR-004](decisions/004-event-envelope-and-kafka-publishing.md)) |
+| Eventing (in) | **Kafka consumer** for `ledger.account.created` (+ `.dlt`): `ErrorHandlingDeserializer` + retry/back-off + `DeadLetterPublishingRecoverer` | [Phase 009](phases/009-ledger-owned-virtual-accounts/DESIGN.md) ([ADR-011](decisions/011-ledger-owned-virtual-accounts-via-kafka-consumer.md)) |
 | Auth | Token introspection via external **AUTH SERVICE** (no local JWT signing) | mirrors ledger ([ADR-006](decisions/006-auth-via-external-auth-service.md)) |
 | Frontend | **React 19 + Vite 6 + react-router 7 + react-query 5 + Tailwind + shadcn/ui** | mirrors swift-admin ([ADR-005](decisions/005-react-vite-shadcn-frontend.md)) |
 | Batch execution | Bounded async workers on **virtual threads** | [ADR-007](decisions/007-csv-batch-execution-model.md) |
@@ -52,14 +55,19 @@ flowchart TB
     end
 
     auth["AUTH SERVICE<br/>(token issue + introspection)"]
-    kafka{{"Kafka<br/>11 ledger inbound topics"}}
-    ledger["ss-ledger-service<br/>(consumes events, owns journals/balances)"]
+    kafka{{"Kafka<br/>ledger inbound topics + ledger.account.created"}}
+    ledger["ss-ledger-service<br/>(consumes events, owns journals/balances + virtual accounts)"]
+    restcountries["restcountries.com<br/>(country + currency reference data)"]
 
     operator --> ui
     be -->|"login + token verify"| auth
+    be -->|"seed countries + currencies at startup"| restcountries
     be -->|"publish flow events"| kafka
+    be -->|"create accounts / VAs (POST /accounts)"| ledger
     be -->|"read accounts / transactions (RestClient)"| ledger
+    kafka -->|"ledger.account.created → VA projection"| be
     kafka --> ledger
+    ledger -->|"ledger.account.created"| kafka
 ```
 
 ## 4. Backend module map (`com.softspark.chaos`)
@@ -72,13 +80,16 @@ com.softspark.chaos
 ├── config            # security, openapi, async/virtual-threads, web
 ├── advice            # GlobalExceptionHandler, ApiError, ErrorDescription
 ├── base              # shared records, pagination, ids (ULID), clock
-├── kafka             # EventEnvelope, EventMetadata, ProducerConfiguration, TopicCatalog, ChaosEventPublisher
-├── account           # chart of accounts + virtual account registry
-│   ├── controller / dto / service / repository / model / enumeration / bootstrap
-│   └── bootstrap     # Phase 007: catalog config, ledger HTTP provisioning, runner
-├── organization      # Phase 008: countries + org types master data, org onboarding
-│   ├── controller / dto / service / repository / model / enumeration
-│   └── outbox        # OutboxEvent entity + polling relay → organization.onboarded
+├── kafka             # out: EventEnvelope, EventMetadata, ProducerConfiguration, TopicCatalog, ChaosEventPublisher
+│                     # in (Phase 009): ConsumerConfiguration, ConsumerProperties (ErrorHandlingDeserializer + DLT)
+├── account           # chart of accounts + virtual account registry (a *projection* of ledger.account.created)
+│   ├── controller / dto / service / repository / model / enumeration / bootstrap / consumer
+│   ├── bootstrap     # Phase 007/009: catalog config, ledger HTTP provisioning, non-blocking runner
+│   └── consumer      # Phase 009: LedgerAccountCreatedConsumer + mirror payload → VA projection
+├── organization      # Phase 008/010: countries + org types + currencies + supported countries, org onboarding
+│   ├── controller / dto / service / repository / model / enumeration  # incl. Currency, SupportedCountry
+│   ├── seed          # Phase 010: RestCountriesClient + ReferenceDataSeeder (startup seed from restcountries.com)
+│   └── outbox        # OutboxEvent entity + polling relay → organization.onboarded (incl. currency {id,code})
 ├── flow              # transaction flow engine
 │   ├── controller / dto / service / model(payloads v1) / chaos / registry
 ├── batch             # CSV ingest + batch run execution
@@ -171,10 +182,14 @@ config-seeded approach of Phase 002 / task 001.)
 | 005 | [Frontend Admin](phases/005-frontend-admin/DESIGN.md) | React/Vite UI: auth, CoA, VAs, transactions, chaos runner |
 | 006 | [Testing & Verification](phases/006-testing-and-verification/DESIGN.md) | Backend unit + integration, frontend, and e2e chaos verification |
 | 008 | [Organization Onboarding](phases/008-organization-onboarding/DESIGN.md) | Countries + org types master data, organization onboarding API, transactional outbox publishing `organization.onboarded` |
+| 009 | [Ledger-Owned Virtual Accounts](phases/009-ledger-owned-virtual-accounts/DESIGN.md) | The ledger owns VAs; chaos's **first Kafka consumer** projects `ledger.account.created` into the VA registry; VA-create API + CoA bootstrap become HTTP-only/non-blocking; manual CoA trigger in UI (supersedes VA ownership of 002/004 + sync persistence of 007) |
+| 010 | [Currencies & Supported Countries](phases/010-currencies-and-supported-countries/DESIGN.md) | Managed `currency` table (seeded + manual), `country.primary_currency`, separate `supported_country` table driving the onboarding form, `organization.onboarded` carries `currency {id, code}` |
 
-Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008**. Phase 007 (formerly
-`025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies phases 001–007, and
-008 is the latest feature increment (with its own tests folded back into the 006 suites).
+Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)**.
+Phase 007 (formerly `025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies
+phases 001–007. Phases 009 and 010 are the latest increment (idea `002_countries_va_via_kafka.md`)
+and run largely in parallel — they converge where the org-VA create form (009) consumes the
+`currency` table (010); their tests fold back into the 006 suites.
 
 ## 9. Cross-cutting non-functional posture
 
@@ -195,9 +210,14 @@ Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → 
    by VA id, flow/event type, correlation id, date range, and status.
 2. **Account-code fixes:** `PROVIDER_FEE` code was blank → assumed `REVENUE.PROVIDER.FEE`;
    `PLATFORM_FLOAT_MTN` duplicated the TELECEL code → assumed `ASSET.PLATFORM.FLOAT.MTN`.
-3. **VA creation "via Kafka"** has no dedicated inbound topic; modeled as publishing
-   `organization.onboarded` (system/org bootstrap) and `organization.va.updated`. See
-   [Phase 002 / task 004](phases/002-accounts-chart-of-accounts/004-virtual-account-creation-via-kafka.md).
+3. ~~**VA creation "via Kafka"** has no dedicated inbound topic; modeled as publishing
+   `organization.onboarded` and `organization.va.updated`.~~ **Superseded by
+   [Phase 009](phases/009-ledger-owned-virtual-accounts/DESIGN.md) ([ADR-011](decisions/011-ledger-owned-virtual-accounts-via-kafka-consumer.md)):**
+   the ledger *does* publish a dedicated **`ledger.account.created`** event (+ `.dlt`) — verified in
+   `ss-ledger-service` (`account/events/v1/AccountCreatedEventData`,
+   `account/events/AccountCreatedEventFactory`). The chaos machine now **consumes** it (its first
+   Kafka consumer) to materialize VAs; the ledger owns VAs. VA-create + CoA bootstrap issue
+   `POST /api/v0/accounts` to the ledger and never persist VAs directly.
 4. **`disbursement.completed` is a proposed contract.** `DISBURSEMENT` exists in the ledger's
    `TransactionTypeEnum`/`EntryTypeEnum` but has no published payload sample or consumer yet. We
    model it symmetric to `collection.completed` (money out: org VA debited → platform float
@@ -212,5 +232,28 @@ Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → 
    extends that record to match. The sample also uses an **ISO 3166-1 alpha-2** `iso_code` (`GH`),
    so the country `iso_code` column is widened/relaxed from the prior 3-char assumption. Verified
    against the sibling repo; re-confirm if the ledger contract changes.
+
+7. **`organization.onboarded` carries currency, the ledger does not read it yet.**
+   [Phase 010](phases/010-currencies-and-supported-countries/DESIGN.md) ([ADR-012](decisions/012-currency-and-supported-country-reference-model.md))
+   adds a top-level `currency {id, code}` to the payload from the country's primary currency. The
+   ledger's `OnboardedEventData` has **no** currency field and its org-VA provisioner hardcodes
+   `GHS` (verified in `ss-ledger-service`); the extra field is safe while the ledger keeps Jackson's
+   default `fail-on-unknown-properties=false`. Coordinate when the ledger starts honouring currency.
+8. **Deletion of organizations is deferred.** The idea (`002_countries_va_via_kafka.md`) lists
+   "support deletion of organizations"; per product decision this is **deferred to a future phase
+   that handles virtual-account statuses/lifecycle** (since orgs drive VAs the ledger owns). Not in
+   Phase 009/010.
+9. **Currency representation:** chaos models currency as a managed table with a **UUID id + ISO-4217
+   `code`** ([ADR-012](decisions/012-currency-and-supported-country-reference-model.md)); the
+   ledger stores account currency as a plain ISO-4217 string. They reconcile by `code`. The
+   `ledger.account.created` projection stores the ledger's currency code as-is and does not require
+   a matching `currency` row to exist.
+10. **External reference-data dependency:** countries + currencies are **seeded at startup from
+    [restcountries.com](https://restcountries.com/)** (`/v3.1/all?fields=name,cca2,cca3,currencies`)
+    per [ADR-013](decisions/013-seed-countries-and-currencies-from-restcountries-api.md). The fetch
+    is async + seed-if-empty + degrade-on-failure, so a slow/unreachable API never blocks or breaks
+    boot; a cold first boot with no network leaves the country list empty until a retry or
+    `POST /api/v0/countries/refresh`. Base URL is configurable to a mirror/self-host; the API
+    requires the `fields` param and returns the first-of-many currency as a country's primary.
 
 These are safe-to-proceed defaults; revise here if the complete MANIFEST / ledger contract differs.

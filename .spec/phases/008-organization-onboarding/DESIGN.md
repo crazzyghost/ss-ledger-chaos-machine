@@ -1,5 +1,13 @@
 # Phase 008 - Organization Onboarding
 
+> **Follow-up:** [Phase 010](../010-currencies-and-supported-countries/DESIGN.md)
+> ([ADR-012](../../decisions/012-currency-and-supported-country-reference-model.md)) extends this
+> phase's reference data with a managed **`currency`** table, a **`country.primary_currency`**, a
+> separate **`supported_country`** table (the onboarding form lists only supported countries), and
+> adds a top-level **`currency {id, code}`** to the `organization.onboarded` payload. **Deletion of
+> organizations** (requested in idea `002_countries_va_via_kafka.md`) is **deferred** to a later
+> phase handling VA statuses/lifecycle.
+
 ## Summary
 Turns organization onboarding into a first-class operation. Adds **Country** and
 **Organization Type** master-data CRUD, refactors the `organization` entity to reference them by FK

@@ -1,5 +1,14 @@
 # Task 003 - Virtual Account Registry & Creation via API
 
+> **⚠️ Partially superseded by [Phase 009](../009-ledger-owned-virtual-accounts/DESIGN.md)
+> ([ADR-011](../../decisions/011-ledger-owned-virtual-accounts-via-kafka-consumer.md)).** The
+> `virtual_account` registry persists, but it is now a **projection of the ledger's
+> `ledger.account.created` event**, not a table the API writes directly. `POST /api/v0/virtual-accounts`
+> no longer inserts locally — it requests creation from the ledger over HTTP and returns `202`; the
+> row appears when the event is consumed. Org VAs can be created with **any currency**. See
+> [Phase 009 / Task 004](../009-ledger-owned-virtual-accounts/004-invert-va-creation-api.md). The
+> entity/registry shape below remains accurate; the *creation* semantics are superseded.
+
 ## Functional Requirements
 - Maintain a registry of all virtual accounts the chaos machine knows about (SYSTEM +
   ORGANIZATION) and allow **creating a virtual account via the API**, optionally linking it to
