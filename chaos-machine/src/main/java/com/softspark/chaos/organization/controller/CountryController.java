@@ -4,6 +4,8 @@ import com.softspark.chaos.base.PageResponse;
 import com.softspark.chaos.organization.dto.CountryResponse;
 import com.softspark.chaos.organization.dto.CreateCountryRequest;
 import com.softspark.chaos.organization.dto.UpdateCountryRequest;
+import com.softspark.chaos.organization.seed.ReferenceDataSeeder;
+import com.softspark.chaos.organization.seed.SeedSummary;
 import com.softspark.chaos.organization.service.CountryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -31,9 +33,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class CountryController {
 
   private final CountryService countryService;
+  private final ReferenceDataSeeder referenceDataSeeder;
 
-  public CountryController(CountryService countryService) {
+  public CountryController(
+      CountryService countryService, ReferenceDataSeeder referenceDataSeeder) {
     this.countryService = countryService;
+    this.referenceDataSeeder = referenceDataSeeder;
   }
 
   /**
@@ -78,8 +83,16 @@ public class CountryController {
       @Parameter(description = "Page number (0-indexed)") @RequestParam(required = false)
           Integer page,
       @Parameter(description = "Number of items per page (max 100)") @RequestParam(required = false)
-          Integer perPage) {
-    var result = countryService.listCountries(page, perPage);
+          Integer perPage,
+      @Parameter(description = "Search term matched against name or ISO code")
+          @RequestParam(required = false)
+          String search,
+      @Parameter(description = "Sort field (name, isoCode, status, modifiedDate, createdAt)")
+          @RequestParam(required = false)
+          String sortBy,
+      @Parameter(description = "Sort direction (asc or desc)") @RequestParam(required = false)
+          String sortDir) {
+    var result = countryService.listCountries(page, perPage, search, sortBy, sortDir);
     return ResponseEntity.ok(result);
   }
 
@@ -93,10 +106,26 @@ public class CountryController {
   @PutMapping("/{countryId}")
   @Operation(
       summary = "Update a country",
-      description = "Updates a country's name, ISO code, and status")
+      description = "Updates a country's name, ISO code, status, and primary currency")
   public ResponseEntity<CountryResponse> updateCountry(
       @PathVariable String countryId, @Valid @RequestBody UpdateCountryRequest request) {
     var updated = countryService.updateCountry(countryId, request);
     return ResponseEntity.ok(updated);
+  }
+
+  /**
+   * Forces a re-seed of countries and currencies from restcountries.com.
+   *
+   * @return a summary of the seed run
+   */
+  @PostMapping("/refresh")
+  @Operation(
+      summary = "Refresh reference data",
+      description =
+          "Forces a re-seed of countries and currencies from restcountries.com (idempotent, "
+              + "seed-if-absent)")
+  public ResponseEntity<SeedSummary> refresh() {
+    var summary = referenceDataSeeder.refresh();
+    return ResponseEntity.ok(summary);
   }
 }

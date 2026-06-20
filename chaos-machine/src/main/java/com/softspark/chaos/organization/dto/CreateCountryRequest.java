@@ -22,4 +22,5 @@ public record CreateCountryRequest(
         @Size(min = 2, max = 3, message = "ISO code must be 2 or 3 characters")
         String isoCode,
     @IsInEnum(enumClass = CountryStatus.class, message = "Invalid status") String status,
+    String primaryCurrencyId,
     Instant modifiedDate) {}

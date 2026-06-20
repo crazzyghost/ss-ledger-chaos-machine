@@ -33,6 +33,9 @@ public class Country extends AuditableEntity {
   @Column(name = "status", nullable = false)
   private CountryStatus status;
 
+  @Column(name = "primary_currency_id")
+  private String primaryCurrencyId;
+
   @Convert(converter = InstantStringConverter.class)
   @Column(name = "modified_date", nullable = false)
   private Instant modifiedDate;
@@ -67,6 +70,14 @@ public class Country extends AuditableEntity {
 
   public void setStatus(CountryStatus status) {
     this.status = status;
+  }
+
+  public String getPrimaryCurrencyId() {
+    return primaryCurrencyId;
+  }
+
+  public void setPrimaryCurrencyId(String primaryCurrencyId) {
+    this.primaryCurrencyId = primaryCurrencyId;
   }
 
   public Instant getModifiedDate() {

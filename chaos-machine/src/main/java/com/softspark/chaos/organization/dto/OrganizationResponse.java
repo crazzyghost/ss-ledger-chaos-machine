@@ -22,6 +22,9 @@ import java.util.List;
  * @param countryIsoCode      snapshot of the country ISO code at onboarding time
  * @param countryStatus       snapshot of the country status at onboarding time
  * @param countryModifiedDate snapshot of the country modified date at onboarding time
+ * @param primaryCurrencyId   snapshot of the country's primary currency ID at onboarding time
+ * @param primaryCurrencyCode snapshot of the country's primary currency ISO-4217 code at onboarding
+ *                            time
  * @param primaryContactEmail the primary contact email (nullable)
  * @param phoneNumbers        the list of phone numbers (never null; empty when none)
  * @param status              the organization status
@@ -41,6 +44,8 @@ public record OrganizationResponse(
     String countryIsoCode,
     String countryStatus,
     Instant countryModifiedDate,
+    String primaryCurrencyId,
+    String primaryCurrencyCode,
     String primaryContactEmail,
     List<String> phoneNumbers,
     OrganizationStatus status,

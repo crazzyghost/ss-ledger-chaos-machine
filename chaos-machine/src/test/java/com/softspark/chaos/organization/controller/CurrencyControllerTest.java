@@ -9,11 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.softspark.chaos.advice.GlobalExceptionHandler;
 import com.softspark.chaos.config.SecurityConfiguration;
-import com.softspark.chaos.organization.dto.CountryResponse;
-import com.softspark.chaos.organization.dto.CreateCountryRequest;
-import com.softspark.chaos.organization.enumeration.CountryStatus;
-import com.softspark.chaos.organization.seed.ReferenceDataSeeder;
-import com.softspark.chaos.organization.service.CountryService;
+import com.softspark.chaos.organization.dto.CreateCurrencyRequest;
+import com.softspark.chaos.organization.dto.CurrencyResponse;
+import com.softspark.chaos.organization.enumeration.CurrencyStatus;
+import com.softspark.chaos.organization.service.CurrencyService;
 import java.time.Instant;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,79 +26,58 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * WebMvc slice tests for {@link CountryController}.
+ * WebMvc slice tests for {@link CurrencyController}.
  */
-@WebMvcTest(CountryController.class)
+@WebMvcTest(CurrencyController.class)
 @Import({GlobalExceptionHandler.class, SecurityConfiguration.class})
-@DisplayName("CountryController")
-class CountryControllerTest {
+@DisplayName("CurrencyController")
+class CurrencyControllerTest {
 
   @Autowired private MockMvc mockMvc;
   private final ObjectMapper objectMapper = new ObjectMapper();
 
-  @MockitoBean private CountryService countryService;
-  @MockitoBean private ReferenceDataSeeder referenceDataSeeder;
+  @MockitoBean private CurrencyService currencyService;
 
-  private CountryResponse sampleResponse() {
-    return new CountryResponse(
+  private CurrencyResponse sampleResponse() {
+    return new CurrencyResponse(
         "11111111-1111-4111-8111-111111111111",
-        "Ghana",
-        "GH",
-        CountryStatus.ACTIVE,
-        null,
-        null,
-        Instant.now(),
+        "GHS",
+        "Ghanaian cedi",
+        "₵",
+        CurrencyStatus.ACTIVE,
         Instant.now(),
         Instant.now());
   }
 
-  // ── POST /api/v0/countries ────────────────────────────────────────────────
-
   @Nested
-  @DisplayName("POST /api/v0/countries")
-  class CreateCountryTests {
+  @DisplayName("POST /api/v0/currencies")
+  class CreateCurrencyTests {
 
     @Test
     @WithMockUser
     @DisplayName("valid request returns 201")
     void validRequestReturns201() throws Exception {
-      var req = new CreateCountryRequest("Ghana", "GH", null, null, null);
-      when(countryService.createCountry(any())).thenReturn(sampleResponse());
+      var req = new CreateCurrencyRequest("GHS", "Ghanaian cedi", "₵", null);
+      when(currencyService.createCurrency(any())).thenReturn(sampleResponse());
 
       mockMvc
           .perform(
-              post("/api/v0/countries")
+              post("/api/v0/currencies")
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(objectMapper.writeValueAsString(req)))
           .andExpect(status().isCreated())
-          .andExpect(jsonPath("$.isoCode").value("GH"));
+          .andExpect(jsonPath("$.code").value("GHS"));
     }
 
     @Test
     @WithMockUser
-    @DisplayName("blank name returns 400 with validation error")
-    void blankNameReturns400() throws Exception {
-      var req = new CreateCountryRequest("", "GH", null, null, null);
+    @DisplayName("blank code returns 400")
+    void blankCodeReturns400() throws Exception {
+      var req = new CreateCurrencyRequest("", "Ghanaian cedi", "₵", null);
 
       mockMvc
           .perform(
-              post("/api/v0/countries")
-                  .contentType(MediaType.APPLICATION_JSON)
-                  .content(objectMapper.writeValueAsString(req)))
-          .andExpect(status().isBadRequest())
-          .andExpect(jsonPath("$.message").value("Validation failed"))
-          .andExpect(jsonPath("$.errors").isArray());
-    }
-
-    @Test
-    @WithMockUser
-    @DisplayName("iso_code of length 1 returns 400")
-    void isoCodeTooShortReturns400() throws Exception {
-      var req = new CreateCountryRequest("Ghana", "G", null, null, null);
-
-      mockMvc
-          .perform(
-              post("/api/v0/countries")
+              post("/api/v0/currencies")
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(objectMapper.writeValueAsString(req)))
           .andExpect(status().isBadRequest())
@@ -108,13 +86,13 @@ class CountryControllerTest {
 
     @Test
     @WithMockUser
-    @DisplayName("iso_code of length 4 returns 400")
-    void isoCodeTooLongReturns400() throws Exception {
-      var req = new CreateCountryRequest("Ghana", "GHAN", null, null, null);
+    @DisplayName("non-ISO-4217 code returns 400")
+    void invalidCodeReturns400() throws Exception {
+      var req = new CreateCurrencyRequest("ZZZ", "Nonsense", null, null);
 
       mockMvc
           .perform(
-              post("/api/v0/countries")
+              post("/api/v0/currencies")
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(objectMapper.writeValueAsString(req)))
           .andExpect(status().isBadRequest())
@@ -125,11 +103,11 @@ class CountryControllerTest {
     @WithMockUser
     @DisplayName("invalid status returns 400")
     void invalidStatusReturns400() throws Exception {
-      var req = new CreateCountryRequest("Ghana", "GH", "NOT_A_STATUS", null, null);
+      var req = new CreateCurrencyRequest("GHS", "Ghanaian cedi", null, "NOT_A_STATUS");
 
       mockMvc
           .perform(
-              post("/api/v0/countries")
+              post("/api/v0/currencies")
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(objectMapper.writeValueAsString(req)))
           .andExpect(status().isBadRequest())

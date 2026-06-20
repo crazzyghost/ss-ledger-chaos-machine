@@ -64,6 +64,12 @@ public class Organization extends AuditableEntity {
   @Column(name = "country_modified_date")
   private Instant countryModifiedDate;
 
+  @Column(name = "primary_currency_id")
+  private String primaryCurrencyId;
+
+  @Column(name = "primary_currency_code")
+  private String primaryCurrencyCode;
+
   @Enumerated(EnumType.STRING)
   @Column(name = "status", nullable = false)
   private OrganizationStatus status;
@@ -154,6 +160,22 @@ public class Organization extends AuditableEntity {
 
   public void setCountryModifiedDate(Instant countryModifiedDate) {
     this.countryModifiedDate = countryModifiedDate;
+  }
+
+  public String getPrimaryCurrencyId() {
+    return primaryCurrencyId;
+  }
+
+  public void setPrimaryCurrencyId(String primaryCurrencyId) {
+    this.primaryCurrencyId = primaryCurrencyId;
+  }
+
+  public String getPrimaryCurrencyCode() {
+    return primaryCurrencyCode;
+  }
+
+  public void setPrimaryCurrencyCode(String primaryCurrencyCode) {
+    this.primaryCurrencyCode = primaryCurrencyCode;
   }
 
   public OrganizationStatus getStatus() {

@@ -96,6 +96,24 @@ chaos:
       poll-interval-ms: ${CHAOS_ORG_OUTBOX_POLL_INTERVAL_MS:1000}
       batch-size: ${CHAOS_ORG_OUTBOX_BATCH_SIZE:50}
       max-attempts: ${CHAOS_ORG_OUTBOX_MAX_ATTEMPTS:5}
+  reference-data:
+    seed-on-startup: ${CHAOS_REFERENCE_DATA_SEED_ON_STARTUP:IF_EMPTY}   # IF_EMPTY | ALWAYS | NEVER
+    # Defaults to the keyless mledoze/countries GitHub dataset (the upstream source restcountries.com
+    # is generated from). To use the official, key-gated v5 API instead, set:
+    #   base-url: https://api.restcountries.com
+    #   path: /countries/v5
+    #   fields: name,cca2,cca3,currencies
+    #   limit: 500
+    #   api-key: <your restcountries.com Bearer key>
+    restcountries:
+      base-url: ${CHAOS_RESTCOUNTRIES_BASE_URL:https://raw.githubusercontent.com}
+      path: ${CHAOS_RESTCOUNTRIES_PATH:/mledoze/countries/master/countries.json}
+      fields: ${CHAOS_RESTCOUNTRIES_FIELDS:}
+      limit: ${CHAOS_RESTCOUNTRIES_LIMIT:0}
+      api-key: ${CHAOS_RESTCOUNTRIES_API_KEY:}
+      connect-ms: ${CHAOS_RESTCOUNTRIES_CONNECT_MS:5000}
+      read-ms: ${CHAOS_RESTCOUNTRIES_READ_MS:20000}
+      retry-max-attempts: ${CHAOS_RESTCOUNTRIES_RETRY_MAX_ATTEMPTS:3}
 
 auth-service:
   base-url: ${AUTH_SERVICE_BASE_URL:}

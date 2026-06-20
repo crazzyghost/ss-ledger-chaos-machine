@@ -65,12 +65,19 @@ public class OrganizationOnboardedEnvelopeFactory {
             org.getCountryStatus(),
             org.getCountryModifiedDate());
 
+    var currency =
+        org.getPrimaryCurrencyId() != null || org.getPrimaryCurrencyCode() != null
+            ? new OrganizationOnboardedEventData.Currency(
+                org.getPrimaryCurrencyId(), org.getPrimaryCurrencyCode())
+            : null;
+
     var data =
         new OrganizationOnboardedEventData(
             org.getOrganizationId(),
             org.getName(),
             type,
             country,
+            currency,
             org.getPrimaryContactEmail(),
             org.getPhoneNumbers() != null ? org.getPhoneNumbers() : List.of(),
             org.getStatus() != null ? org.getStatus().name() : null);

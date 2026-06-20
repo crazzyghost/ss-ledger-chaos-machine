@@ -16,6 +16,7 @@ import java.util.List;
  * @param name                the organization name
  * @param type                the organization type
  * @param country             the country information
+ * @param currency            the country's primary currency at onboarding time ({@code {id, code}})
  * @param primaryContactEmail the primary contact email
  * @param phone               the phone numbers
  * @param status              the organization status
@@ -27,6 +28,7 @@ public record OrganizationOnboardedEventData(
     String name,
     OrganizationType type,
     Country country,
+    Currency currency,
     @JsonProperty("primary_contact_email") String primaryContactEmail,
     List<String> phone,
     String status) {
@@ -58,4 +60,14 @@ public record OrganizationOnboardedEventData(
       @JsonProperty("iso_code") String isoCode,
       String status,
       @JsonProperty("modified_date") Instant modifiedDate) {}
+
+  /**
+   * Primary currency information resolved from the onboarded country.
+   *
+   * @param id   the chaos currency ID (UUID v4)
+   * @param code the ISO-4217 currency code
+   */
+  @RecordBuilder
+  @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+  public record Currency(String id, String code) {}
 }

@@ -13,6 +13,7 @@ import com.softspark.chaos.organization.dto.UpdateCountryRequest;
 import com.softspark.chaos.organization.enumeration.CountryStatus;
 import com.softspark.chaos.organization.model.Country;
 import com.softspark.chaos.organization.repository.CountryRepository;
+import com.softspark.chaos.organization.repository.CurrencyRepository;
 import java.time.Instant;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
@@ -32,6 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class CountryServiceTest {
 
   @Mock private CountryRepository countryRepository;
+  @Mock private CurrencyRepository currencyRepository;
 
   @InjectMocks private CountryService service;
 
@@ -56,7 +58,7 @@ class CountryServiceTest {
     @Test
     @DisplayName("assigns a UUID id, sets modified_date, uppercases iso_code, defaults ACTIVE")
     void createAssignsDefaults() {
-      var req = new CreateCountryRequest("Ghana", "gh", null, null);
+      var req = new CreateCountryRequest("Ghana", "gh", null, null, null);
       when(countryRepository.existsByIsoCode("GH")).thenReturn(false);
       when(countryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -79,7 +81,7 @@ class CountryServiceTest {
     @DisplayName("honours a supplied modified_date and status")
     void createHonoursSuppliedValues() {
       var modified = Instant.parse("2020-01-01T00:00:00Z");
-      var req = new CreateCountryRequest("Ghana", "gha", "INACTIVE", modified);
+      var req = new CreateCountryRequest("Ghana", "gha", "INACTIVE", null, modified);
       when(countryRepository.existsByIsoCode("GHA")).thenReturn(false);
       when(countryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -93,7 +95,7 @@ class CountryServiceTest {
     @Test
     @DisplayName("duplicate iso_code throws ConflictException")
     void duplicateIsoCodeThrowsConflict() {
-      var req = new CreateCountryRequest("Ghana", "GH", null, null);
+      var req = new CreateCountryRequest("Ghana", "GH", null, null, null);
       when(countryRepository.existsByIsoCode("GH")).thenReturn(true);
 
       assertThatThrownBy(() -> service.createCountry(req))
@@ -130,7 +132,7 @@ class CountryServiceTest {
     void throwsNotFoundWhenMissing() {
       when(countryRepository.findById(anyString())).thenReturn(Optional.empty());
 
-      var req = new UpdateCountryRequest("Ghana", "GH", null, null);
+      var req = new UpdateCountryRequest("Ghana", "GH", null, null, null);
       assertThatThrownBy(() -> service.updateCountry("missing", req))
           .isInstanceOf(NotFoundException.class)
           .hasMessageContaining("missing");
@@ -144,7 +146,7 @@ class CountryServiceTest {
       when(countryRepository.findByIsoCode("GHA")).thenReturn(Optional.empty());
       when(countryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-      var req = new UpdateCountryRequest("Republic of Ghana", "gha", "INACTIVE", null);
+      var req = new UpdateCountryRequest("Republic of Ghana", "gha", "INACTIVE", null, null);
       var response = service.updateCountry("c-1", req);
 
       assertThat(response.name()).isEqualTo("Republic of Ghana");
@@ -160,7 +162,7 @@ class CountryServiceTest {
       when(countryRepository.findById("c-1")).thenReturn(Optional.of(existing));
       when(countryRepository.findByIsoCode("NG")).thenReturn(Optional.of(other));
 
-      var req = new UpdateCountryRequest("Ghana", "ng", null, null);
+      var req = new UpdateCountryRequest("Ghana", "ng", null, null, null);
       assertThatThrownBy(() -> service.updateCountry("c-1", req))
           .isInstanceOf(ConflictException.class)
           .hasMessageContaining("NG");
@@ -173,7 +175,7 @@ class CountryServiceTest {
       when(countryRepository.findById("c-1")).thenReturn(Optional.of(existing));
       when(countryRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-      var req = new UpdateCountryRequest("Ghana Updated", "gh", "ACTIVE", null);
+      var req = new UpdateCountryRequest("Ghana Updated", "gh", "ACTIVE", null, null);
       var response = service.updateCountry("c-1", req);
 
       assertThat(response.isoCode()).isEqualTo("GH");

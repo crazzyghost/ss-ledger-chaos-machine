@@ -1,17 +1,25 @@
 package com.softspark.chaos.organization.service;
 
 import com.softspark.chaos.base.PageResponse;
+import com.softspark.chaos.base.SortSupport;
 import com.softspark.chaos.exception.BadRequestException;
+import com.softspark.chaos.exception.ConflictException;
 import com.softspark.chaos.exception.NotFoundException;
 import com.softspark.chaos.organization.dto.CreateOrganizationRequest;
 import com.softspark.chaos.organization.dto.OrganizationResponse;
+import com.softspark.chaos.organization.enumeration.CurrencyStatus;
 import com.softspark.chaos.organization.enumeration.OrganizationStatus;
+import com.softspark.chaos.organization.enumeration.SupportedCountryStatus;
+import com.softspark.chaos.organization.model.Currency;
 import com.softspark.chaos.organization.model.Organization;
 import com.softspark.chaos.organization.outbox.OutboxEnqueuer;
 import com.softspark.chaos.organization.repository.CountryRepository;
+import com.softspark.chaos.organization.repository.CurrencyRepository;
 import com.softspark.chaos.organization.repository.OrganizationRepository;
 import com.softspark.chaos.organization.repository.OrganizationTypeRepository;
+import com.softspark.chaos.organization.repository.SupportedCountryRepository;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +28,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,10 +46,15 @@ public class OrganizationService {
   private static final Logger log = LoggerFactory.getLogger(OrganizationService.class);
   private static final int DEFAULT_PAGE_SIZE = 20;
   private static final int MAX_PAGE_SIZE = 100;
+  private static final Set<String> SORTABLE =
+      Set.of("name", "status", "createdAt", "updatedAt");
+  private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "createdAt");
 
   private final OrganizationRepository organizationRepository;
   private final CountryRepository countryRepository;
   private final OrganizationTypeRepository organizationTypeRepository;
+  private final CurrencyRepository currencyRepository;
+  private final SupportedCountryRepository supportedCountryRepository;
   private final OutboxEnqueuer outboxEnqueuer;
   private final String defaultTenantId;
 
@@ -48,11 +62,15 @@ public class OrganizationService {
       OrganizationRepository organizationRepository,
       CountryRepository countryRepository,
       OrganizationTypeRepository organizationTypeRepository,
+      CurrencyRepository currencyRepository,
+      SupportedCountryRepository supportedCountryRepository,
       OutboxEnqueuer outboxEnqueuer,
       @Value("${chaos.default-tenant-id:org_system}") String defaultTenantId) {
     this.organizationRepository = organizationRepository;
     this.countryRepository = countryRepository;
     this.organizationTypeRepository = organizationTypeRepository;
+    this.currencyRepository = currencyRepository;
+    this.supportedCountryRepository = supportedCountryRepository;
     this.outboxEnqueuer = outboxEnqueuer;
     this.defaultTenantId = defaultTenantId;
   }
@@ -77,6 +95,19 @@ public class OrganizationService {
             .findById(request.countryId())
             .orElseThrow(() -> new NotFoundException("Country not found: " + request.countryId()));
 
+    // [Task 003] the onboarded country must be in the supported set (ACTIVE).
+    boolean supported =
+        supportedCountryRepository
+            .findByCountryId(country.getCountryId())
+            .map(s -> s.getStatus() == SupportedCountryStatus.ACTIVE)
+            .orElse(false);
+    if (!supported) {
+      throw new ConflictException("Country is not supported for onboarding: " + country.getName());
+    }
+
+    // [Task 004] resolve + validate the country's primary currency (must exist and be ACTIVE).
+    Currency primaryCurrency = resolvePrimaryCurrency(country.getPrimaryCurrencyId(), country.getName());
+
     var organizationType =
         organizationTypeRepository
             .findById(request.organizationTypeId())
@@ -100,6 +131,8 @@ public class OrganizationService {
     organization.setCountryIsoCode(country.getIsoCode());
     organization.setCountryStatus(country.getStatus().name());
     organization.setCountryModifiedDate(country.getModifiedDate());
+    organization.setPrimaryCurrencyId(primaryCurrency.getCurrencyId());
+    organization.setPrimaryCurrencyCode(primaryCurrency.getCode());
     organization.setStatus(status);
 
     var saved = organizationRepository.save(organization);
@@ -139,18 +172,42 @@ public class OrganizationService {
    * @return a paginated list of organizations
    */
   @Transactional(readOnly = true)
-  public PageResponse<OrganizationResponse> listOrganizations(Integer page, Integer perPage) {
+  public PageResponse<OrganizationResponse> listOrganizations(
+      Integer page, Integer perPage, String search, String sortBy, String sortDir) {
     log.debug("Listing organizations");
 
     int pageNum = page != null && page >= 0 ? page : 0;
     int pageSize =
         perPage != null && perPage > 0 ? Math.min(perPage, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
-    Pageable pageable = PageRequest.of(pageNum, pageSize);
+    Sort sort = SortSupport.resolve(sortBy, sortDir, SORTABLE, DEFAULT_SORT);
+    Pageable pageable = PageRequest.of(pageNum, pageSize, sort);
 
-    Page<Organization> organizationPage = organizationRepository.findAll(pageable);
+    Page<Organization> organizationPage =
+        search != null && !search.isBlank()
+            ? organizationRepository.search(search.trim(), pageable)
+            : organizationRepository.findAll(pageable);
     var items = organizationPage.getContent().stream().map(this::mapToResponse).toList();
 
     return new PageResponse<>(items, pageNum, pageSize, organizationPage.getTotalElements());
+  }
+
+  private Currency resolvePrimaryCurrency(String primaryCurrencyId, String countryName) {
+    if (primaryCurrencyId == null || primaryCurrencyId.isBlank()) {
+      throw new ConflictException(
+          "Country has no primary currency and cannot be onboarded: " + countryName);
+    }
+    var currency =
+        currencyRepository
+            .findById(primaryCurrencyId)
+            .orElseThrow(
+                () ->
+                    new ConflictException(
+                        "Country's primary currency does not exist: " + primaryCurrencyId));
+    if (currency.getStatus() != CurrencyStatus.ACTIVE) {
+      throw new ConflictException(
+          "Country's primary currency is not ACTIVE: " + currency.getCode());
+    }
+    return currency;
   }
 
   private OrganizationStatus parseStatus(String status) {
@@ -179,6 +236,8 @@ public class OrganizationService {
         organization.getCountryIsoCode(),
         organization.getCountryStatus(),
         organization.getCountryModifiedDate(),
+        organization.getPrimaryCurrencyId(),
+        organization.getPrimaryCurrencyCode(),
         organization.getPrimaryContactEmail(),
         organization.getPhoneNumbers() != null ? organization.getPhoneNumbers() : List.of(),
         organization.getStatus(),

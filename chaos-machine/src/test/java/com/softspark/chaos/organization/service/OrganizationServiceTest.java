@@ -10,17 +10,24 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.softspark.chaos.exception.ConflictException;
 import com.softspark.chaos.exception.NotFoundException;
 import com.softspark.chaos.organization.dto.CreateOrganizationRequest;
 import com.softspark.chaos.organization.enumeration.CountryStatus;
+import com.softspark.chaos.organization.enumeration.CurrencyStatus;
 import com.softspark.chaos.organization.enumeration.OrganizationStatus;
+import com.softspark.chaos.organization.enumeration.SupportedCountryStatus;
 import com.softspark.chaos.organization.model.Country;
+import com.softspark.chaos.organization.model.Currency;
 import com.softspark.chaos.organization.model.Organization;
 import com.softspark.chaos.organization.model.OrganizationType;
+import com.softspark.chaos.organization.model.SupportedCountry;
 import com.softspark.chaos.organization.outbox.OutboxEnqueuer;
 import com.softspark.chaos.organization.repository.CountryRepository;
+import com.softspark.chaos.organization.repository.CurrencyRepository;
 import com.softspark.chaos.organization.repository.OrganizationRepository;
 import com.softspark.chaos.organization.repository.OrganizationTypeRepository;
+import com.softspark.chaos.organization.repository.SupportedCountryRepository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +56,8 @@ class OrganizationServiceTest {
   @Mock private OrganizationRepository organizationRepository;
   @Mock private CountryRepository countryRepository;
   @Mock private OrganizationTypeRepository organizationTypeRepository;
+  @Mock private CurrencyRepository currencyRepository;
+  @Mock private SupportedCountryRepository supportedCountryRepository;
   @Mock private OutboxEnqueuer outboxEnqueuer;
 
   private OrganizationService service;
@@ -60,6 +69,8 @@ class OrganizationServiceTest {
             organizationRepository,
             countryRepository,
             organizationTypeRepository,
+            currencyRepository,
+            supportedCountryRepository,
             outboxEnqueuer,
             DEFAULT_TENANT_ID);
   }
@@ -72,8 +83,26 @@ class OrganizationServiceTest {
     country.setName("Ghana");
     country.setIsoCode("GH");
     country.setStatus(CountryStatus.ACTIVE);
+    country.setPrimaryCurrencyId("cur-1");
     country.setModifiedDate(Instant.parse("2024-01-01T00:00:00Z"));
     return country;
+  }
+
+  private Currency buildCurrency(CurrencyStatus status) {
+    var currency = new Currency();
+    currency.setCurrencyId("cur-1");
+    currency.setCode("GHS");
+    currency.setName("Ghanaian cedi");
+    currency.setStatus(status);
+    return currency;
+  }
+
+  private SupportedCountry buildSupported(SupportedCountryStatus status) {
+    var supported = new SupportedCountry();
+    supported.setSupportedCountryId("sc-1");
+    supported.setCountryId("country-1");
+    supported.setStatus(status);
+    return supported;
   }
 
   private OrganizationType buildType() {
@@ -88,6 +117,13 @@ class OrganizationServiceTest {
         "Acme Ltd", "type-1", "country-1", "ops@acme.test", List.of("+233200000000"), null);
   }
 
+  private void mockSupportedAndActiveCurrency() {
+    when(supportedCountryRepository.findByCountryId("country-1"))
+        .thenReturn(Optional.of(buildSupported(SupportedCountryStatus.ACTIVE)));
+    when(currencyRepository.findById("cur-1"))
+        .thenReturn(Optional.of(buildCurrency(CurrencyStatus.ACTIVE)));
+  }
+
   // ── onboard ──────────────────────────────────────────────────────────────────
 
   @Nested
@@ -95,9 +131,10 @@ class OrganizationServiceTest {
   class OnboardTests {
 
     @Test
-    @DisplayName("happy path assigns a UUID id and copies reference-data snapshots")
+    @DisplayName("happy path assigns a UUID id and copies reference-data + currency snapshots")
     void onboardCopiesSnapshots() {
       when(countryRepository.findById("country-1")).thenReturn(Optional.of(buildCountry()));
+      mockSupportedAndActiveCurrency();
       when(organizationTypeRepository.findById("type-1")).thenReturn(Optional.of(buildType()));
       when(organizationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
       when(outboxEnqueuer.enqueueOrganizationOnboarded(any(), anyString(), eq(DEFAULT_TENANT_ID)))
@@ -120,11 +157,15 @@ class OrganizationServiceTest {
       assertThat(persisted.getCountryStatus()).isEqualTo("ACTIVE");
       assertThat(persisted.getCountryModifiedDate())
           .isEqualTo(Instant.parse("2024-01-01T00:00:00Z"));
+      assertThat(persisted.getPrimaryCurrencyId()).isEqualTo("cur-1");
+      assertThat(persisted.getPrimaryCurrencyCode()).isEqualTo("GHS");
       assertThat(persisted.getPrimaryContactEmail()).isEqualTo("ops@acme.test");
       assertThat(persisted.getPhoneNumbers()).containsExactly("+233200000000");
       assertThat(persisted.getStatus()).isEqualTo(OrganizationStatus.ACTIVE);
 
       assertThat(response.organizationId()).isEqualTo(persisted.getOrganizationId());
+      assertThat(response.primaryCurrencyId()).isEqualTo("cur-1");
+      assertThat(response.primaryCurrencyCode()).isEqualTo("GHS");
       assertThat(response.phoneNumbers()).containsExactly("+233200000000");
       assertThat(response.status()).isEqualTo(OrganizationStatus.ACTIVE);
       assertThat(response.eventId()).isEqualTo("event-123");
@@ -137,6 +178,7 @@ class OrganizationServiceTest {
     @DisplayName("status defaults to ACTIVE when omitted")
     void statusDefaultsToActive() {
       when(countryRepository.findById("country-1")).thenReturn(Optional.of(buildCountry()));
+      mockSupportedAndActiveCurrency();
       when(organizationTypeRepository.findById("type-1")).thenReturn(Optional.of(buildType()));
       when(organizationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
       when(outboxEnqueuer.enqueueOrganizationOnboarded(any(), anyString(), eq(DEFAULT_TENANT_ID)))
@@ -163,9 +205,56 @@ class OrganizationServiceTest {
     }
 
     @Test
+    @DisplayName("non-supported country throws ConflictException and never saves")
+    void nonSupportedCountryThrows() {
+      when(countryRepository.findById("country-1")).thenReturn(Optional.of(buildCountry()));
+      when(supportedCountryRepository.findByCountryId("country-1")).thenReturn(Optional.empty());
+
+      assertThatThrownBy(() -> service.onboard(buildRequest()))
+          .isInstanceOf(ConflictException.class)
+          .hasMessageContaining("not supported");
+
+      verify(organizationRepository, never()).save(any());
+      verify(outboxEnqueuer, never()).enqueueOrganizationOnboarded(any(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("country without a primary currency throws ConflictException and never saves")
+    void noPrimaryCurrencyThrows() {
+      var country = buildCountry();
+      country.setPrimaryCurrencyId(null);
+      when(countryRepository.findById("country-1")).thenReturn(Optional.of(country));
+      when(supportedCountryRepository.findByCountryId("country-1"))
+          .thenReturn(Optional.of(buildSupported(SupportedCountryStatus.ACTIVE)));
+
+      assertThatThrownBy(() -> service.onboard(buildRequest()))
+          .isInstanceOf(ConflictException.class)
+          .hasMessageContaining("no primary currency");
+
+      verify(organizationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("inactive primary currency throws ConflictException and never saves")
+    void inactiveCurrencyThrows() {
+      when(countryRepository.findById("country-1")).thenReturn(Optional.of(buildCountry()));
+      when(supportedCountryRepository.findByCountryId("country-1"))
+          .thenReturn(Optional.of(buildSupported(SupportedCountryStatus.ACTIVE)));
+      when(currencyRepository.findById("cur-1"))
+          .thenReturn(Optional.of(buildCurrency(CurrencyStatus.INACTIVE)));
+
+      assertThatThrownBy(() -> service.onboard(buildRequest()))
+          .isInstanceOf(ConflictException.class)
+          .hasMessageContaining("not ACTIVE");
+
+      verify(organizationRepository, never()).save(any());
+    }
+
+    @Test
     @DisplayName("unknown organization type id throws NotFoundException and never saves")
     void unknownTypeThrows() {
       when(countryRepository.findById("country-1")).thenReturn(Optional.of(buildCountry()));
+      mockSupportedAndActiveCurrency();
       when(organizationTypeRepository.findById("type-1")).thenReturn(Optional.empty());
 
       assertThatThrownBy(() -> service.onboard(buildRequest()))
@@ -210,7 +299,7 @@ class OrganizationServiceTest {
       Page<Organization> page = new PageImpl<>(List.of(organization), PageRequest.of(0, 20), 1);
       when(organizationRepository.findAll(any(PageRequest.class))).thenReturn(page);
 
-      var result = service.listOrganizations(0, 20);
+      var result = service.listOrganizations(0, 20, null, null, null);
 
       assertThat(result.total()).isEqualTo(1);
       assertThat(result.items()).hasSize(1);

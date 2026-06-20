@@ -50,12 +50,20 @@ public class OrganizationOnboardedFlowBuilder
             f.getOptional("country_status"),
             parseInstant(f.getOptional("country_modified_date")));
 
+    String currencyId = f.getOptional("currency_id");
+    String currencyCode = f.getOptional("currency_code");
+    var currency =
+        currencyId != null || currencyCode != null
+            ? new OrganizationOnboardedEventData.Currency(currencyId, currencyCode)
+            : null;
+
     var data =
         new OrganizationOnboardedEventData(
             f.getRequired("id"),
             f.getRequired("name"),
             orgType,
             country,
+            currency,
             f.getOptional("primary_contact_email"),
             List.of(),
             f.getRequired("status"));

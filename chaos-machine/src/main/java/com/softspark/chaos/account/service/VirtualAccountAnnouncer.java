@@ -142,6 +142,10 @@ public class VirtualAccountAnnouncer {
                 organization.getCountryIsoCode() != null ? organization.getCountryIsoCode() : "GHA",
                 organization.getCountryStatus(),
                 organization.getCountryModifiedDate()),
+            organization.getPrimaryCurrencyId() != null || organization.getPrimaryCurrencyCode() != null
+                ? new OrganizationOnboardedEventData.Currency(
+                    organization.getPrimaryCurrencyId(), organization.getPrimaryCurrencyCode())
+                : null,
             null,
             List.of(),
             organization.getStatus().name());

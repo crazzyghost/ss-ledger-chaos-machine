@@ -43,6 +43,8 @@ class OrganizationOnboardedEnvelopeFactoryTest {
     org.setCountryIsoCode("GH");
     org.setCountryStatus("ACTIVE");
     org.setCountryModifiedDate(Instant.parse("2024-01-02T03:04:05Z"));
+    org.setPrimaryCurrencyId("currency-uuid-1");
+    org.setPrimaryCurrencyCode("GHS");
     org.setPrimaryContactEmail("ops@acme.example");
     org.setPhoneNumbers(List.of("+233201234567"));
     org.setStatus(OrganizationStatus.ACTIVE);
@@ -85,6 +87,10 @@ class OrganizationOnboardedEnvelopeFactoryTest {
     assertThat(country.get("iso_code").asText()).isEqualTo("GH");
     assertThat(country.get("status").asText()).isEqualTo("ACTIVE");
     assertThat(country.hasNonNull("modified_date")).isTrue();
+
+    JsonNode currency = data.get("currency");
+    assertThat(currency.get("id").asText()).isEqualTo("currency-uuid-1");
+    assertThat(currency.get("code").asText()).isEqualTo("GHS");
 
     JsonNode metadata = root.get("metadata");
     assertThat(metadata.get("correlation_id").asText()).isEqualTo("corr-1");

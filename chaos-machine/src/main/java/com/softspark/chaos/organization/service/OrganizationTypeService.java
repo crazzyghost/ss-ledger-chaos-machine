@@ -1,6 +1,7 @@
 package com.softspark.chaos.organization.service;
 
 import com.softspark.chaos.base.PageResponse;
+import com.softspark.chaos.base.SortSupport;
 import com.softspark.chaos.exception.ConflictException;
 import com.softspark.chaos.exception.NotFoundException;
 import com.softspark.chaos.organization.dto.CreateOrganizationTypeRequest;
@@ -8,12 +9,14 @@ import com.softspark.chaos.organization.dto.OrganizationTypeResponse;
 import com.softspark.chaos.organization.dto.UpdateOrganizationTypeRequest;
 import com.softspark.chaos.organization.model.OrganizationType;
 import com.softspark.chaos.organization.repository.OrganizationTypeRepository;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,8 @@ public class OrganizationTypeService {
   private static final Logger log = LoggerFactory.getLogger(OrganizationTypeService.class);
   private static final int DEFAULT_PAGE_SIZE = 20;
   private static final int MAX_PAGE_SIZE = 100;
+  private static final Set<String> SORTABLE = Set.of("name", "createdAt", "updatedAt");
+  private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.ASC, "name");
 
   private final OrganizationTypeRepository organizationTypeRepository;
 
@@ -88,15 +93,19 @@ public class OrganizationTypeService {
    */
   @Transactional(readOnly = true)
   public PageResponse<OrganizationTypeResponse> listOrganizationTypes(
-      Integer page, Integer perPage) {
+      Integer page, Integer perPage, String search, String sortBy, String sortDir) {
     log.debug("Listing organization types");
 
     int pageNum = page != null && page >= 0 ? page : 0;
     int pageSize =
         perPage != null && perPage > 0 ? Math.min(perPage, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
-    Pageable pageable = PageRequest.of(pageNum, pageSize);
+    Sort sort = SortSupport.resolve(sortBy, sortDir, SORTABLE, DEFAULT_SORT);
+    Pageable pageable = PageRequest.of(pageNum, pageSize, sort);
 
-    Page<OrganizationType> typePage = organizationTypeRepository.findAll(pageable);
+    Page<OrganizationType> typePage =
+        search != null && !search.isBlank()
+            ? organizationTypeRepository.findByNameContainingIgnoreCase(search.trim(), pageable)
+            : organizationTypeRepository.findAll(pageable);
     var items = typePage.getContent().stream().map(this::mapToResponse).toList();
 
     return new PageResponse<>(items, pageNum, pageSize, typePage.getTotalElements());

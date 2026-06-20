@@ -83,8 +83,16 @@ public class OrganizationTypeController {
       @Parameter(description = "Page number (0-indexed)") @RequestParam(required = false)
           Integer page,
       @Parameter(description = "Number of items per page (max 100)") @RequestParam(required = false)
-          Integer perPage) {
-    var result = organizationTypeService.listOrganizationTypes(page, perPage);
+          Integer perPage,
+      @Parameter(description = "Search term matched against name") @RequestParam(required = false)
+          String search,
+      @Parameter(description = "Sort field (name, createdAt, updatedAt)")
+          @RequestParam(required = false)
+          String sortBy,
+      @Parameter(description = "Sort direction (asc or desc)") @RequestParam(required = false)
+          String sortDir) {
+    var result =
+        organizationTypeService.listOrganizationTypes(page, perPage, search, sortBy, sortDir);
     return ResponseEntity.ok(result);
   }
 
