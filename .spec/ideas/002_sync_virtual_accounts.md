@@ -1,0 +1,1 @@
+- Sync Virtual accounts from ledger service via kafka

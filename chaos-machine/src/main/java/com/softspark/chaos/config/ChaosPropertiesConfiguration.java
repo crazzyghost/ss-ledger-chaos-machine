@@ -1,6 +1,7 @@
 package com.softspark.chaos.config;
 
 import com.softspark.chaos.flow.chaos.ChaosLimits;
+import com.softspark.chaos.organization.outbox.OutboxProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
@@ -10,5 +11,5 @@ import org.springframework.context.annotation.Configuration;
  * setter injection).
  */
 @Configuration
-@EnableConfigurationProperties(ChaosLimits.class)
+@EnableConfigurationProperties({ChaosLimits.class, OutboxProperties.class})
 public class ChaosPropertiesConfiguration {}

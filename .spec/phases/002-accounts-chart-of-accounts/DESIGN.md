@@ -1,7 +1,7 @@
 # Phase 2 - Accounts & Chart of Accounts
 
 > **Note:** the chart-of-accounts *bootstrap mechanism* (Task 001) is superseded by
-> [Phase 025](../025-chart-of-accounts-http-bootstrap/DESIGN.md): system-account VA ids are now
+> [Phase 007](../007-chart-of-accounts-http-bootstrap/DESIGN.md): system-account VA ids are now
 > provisioned in and returned by the ledger over HTTP, not seeded from config. The registry,
 > flow-slot config, and VA-creation tasks in this phase remain current.
 

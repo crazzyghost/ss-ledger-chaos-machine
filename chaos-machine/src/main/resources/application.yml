@@ -90,6 +90,12 @@ chaos:
   bootstrap:
     reconcile-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_DELAY_MS:60000}
     reconcile-initial-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_INITIAL_DELAY_MS:30000}
+  organization:
+    outbox:
+      enabled: ${CHAOS_ORG_OUTBOX_ENABLED:true}
+      poll-interval-ms: ${CHAOS_ORG_OUTBOX_POLL_INTERVAL_MS:1000}
+      batch-size: ${CHAOS_ORG_OUTBOX_BATCH_SIZE:50}
+      max-attempts: ${CHAOS_ORG_OUTBOX_MAX_ATTEMPTS:5}
 
 auth-service:
   base-url: ${AUTH_SERVICE_BASE_URL:}

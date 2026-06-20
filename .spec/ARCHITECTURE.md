@@ -28,7 +28,9 @@ It is **not** a ledger. It owns no journals or balances. It is a *driver* + *gat
 | Persistence | **SQLite** via JPA + Hibernate community dialect + Flyway | manifest ([ADR-002](decisions/002-sqlite-persistence-with-jpa-and-flyway.md)) |
 | API style | REST under `/api/v0`, records as DTOs, `record-builder` (no Lombok) | mirrors ledger |
 | API docs | springdoc OpenAPI + Swagger UI with a **`bearerAuth`** HTTP security scheme | mirrors ledger |
-| Chart of accounts | **Provisioned in the ledger over HTTP**; VA ids are ledger-assigned (not config) | [Phase 025](phases/025-chart-of-accounts-http-bootstrap/DESIGN.md) |
+| Chart of accounts | **Provisioned in the ledger over HTTP**; VA ids are ledger-assigned (not config) | [Phase 007](phases/007-chart-of-accounts-http-bootstrap/DESIGN.md) |
+| Org reference data | **Countries & org types** are first-class tables (UUID v4 ids); orgs FK them | [Phase 008](phases/008-organization-onboarding/DESIGN.md) ([ADR-008](decisions/008-organization-onboarding-domain-model.md), [ADR-010](decisions/010-uuid-v4-ids-for-organization-domain.md)) |
+| Org onboarding | Creating an org writes a **transactional outbox** row → relay publishes `organization.onboarded` | [Phase 008](phases/008-organization-onboarding/DESIGN.md) ([ADR-009](decisions/009-transactional-outbox-for-organization-onboarded.md)) |
 | Topology | Backend is the **single gateway** for the UI | user-confirmed ([ADR-003](decisions/003-backend-as-single-api-gateway.md)) |
 | Eventing | `EventEnvelope<T>` snake_case + `KafkaTemplate` producer | mirrors ledger ([ADR-004](decisions/004-event-envelope-and-kafka-publishing.md)) |
 | Auth | Token introspection via external **AUTH SERVICE** (no local JWT signing) | mirrors ledger ([ADR-006](decisions/006-auth-via-external-auth-service.md)) |
@@ -73,7 +75,10 @@ com.softspark.chaos
 ├── kafka             # EventEnvelope, EventMetadata, ProducerConfiguration, TopicCatalog, ChaosEventPublisher
 ├── account           # chart of accounts + virtual account registry
 │   ├── controller / dto / service / repository / model / enumeration / bootstrap
-│   └── bootstrap     # Phase 025: catalog config, ledger HTTP provisioning, runner
+│   └── bootstrap     # Phase 007: catalog config, ledger HTTP provisioning, runner
+├── organization      # Phase 008: countries + org types master data, org onboarding
+│   ├── controller / dto / service / repository / model / enumeration
+│   └── outbox        # OutboxEvent entity + polling relay → organization.onboarded
 ├── flow              # transaction flow engine
 │   ├── controller / dto / service / model(payloads v1) / chaos / registry
 ├── batch             # CSV ingest + batch run execution
@@ -107,6 +112,11 @@ src
 All published as `EventEnvelope<T>` (snake_case) to the topic named by `event_type`.
 Full schemas live in [Phase 003 / task 002](phases/003-transaction-flow-engine/002-single-transaction-publishing-api.md).
 
+As of [Phase 008](phases/008-organization-onboarding/DESIGN.md), `organization.onboarded` has **two
+producers**: the manual chaos flow runner (for fault injection — malformed/duplicate/out-of-order)
+*and* the organization onboarding API, which emits a clean event via the transactional outbox. Both
+publish the identical `EventEnvelope<OrganizationOnboardedEventData>` shape.
+
 | Flow | Topic / `event_type` | `source` |
 |---|---|---|
 | Organization onboarded | `organization.onboarded` | organization-service |
@@ -134,7 +144,7 @@ Friendly **account roles** → a ledger SYSTEM account, referenced when filling 
 the role/code catalog from YAML and **provisions each account in the ledger over HTTP**; the
 ledger-assigned `accountId` becomes the role's VA id (stored in the chaos DB). Account **codes
 are unique**. Editable via API. (See
-[Phase 025](phases/025-chart-of-accounts-http-bootstrap/DESIGN.md), which supersedes the
+[Phase 007](phases/007-chart-of-accounts-http-bootstrap/DESIGN.md), which supersedes the
 config-seeded approach of Phase 002 / task 001.)
 
 | Role | Account code (unique) | Category |
@@ -155,14 +165,16 @@ config-seeded approach of Phase 002 / task 001.)
 |---|---|---|
 | 001 | [Foundations](phases/001-foundations/DESIGN.md) | Build, SQLite persistence, web conventions, Kafka envelope + producer |
 | 002 | [Accounts & Chart of Accounts](phases/002-accounts-chart-of-accounts/DESIGN.md) | CoA config, VA registry via API & Kafka |
-| 025 | [Chart of Accounts HTTP Bootstrap](phases/025-chart-of-accounts-http-bootstrap/DESIGN.md) | Provision SYSTEM accounts in the ledger over HTTP; store ledger-assigned VA ids (supersedes 002/task 001 seeding) |
+| 007 | [Chart of Accounts HTTP Bootstrap](phases/007-chart-of-accounts-http-bootstrap/DESIGN.md) | Provision SYSTEM accounts in the ledger over HTTP; store ledger-assigned VA ids (supersedes 002/task 001 seeding). *Formerly numbered 025.* |
 | 003 | [Transaction Flow Engine](phases/003-transaction-flow-engine/DESIGN.md) | Single + CSV publishing, chaos injection, publish history |
 | 004 | [Gateway: Auth & Ledger Proxy](phases/004-gateway-auth-ledger-proxy/DESIGN.md) | Login proxy + resilient ledger read proxy |
 | 005 | [Frontend Admin](phases/005-frontend-admin/DESIGN.md) | React/Vite UI: auth, CoA, VAs, transactions, chaos runner |
-| 006 | [Testing & Verification](phases/006-testing-and-verification/DESIGN.md) | Final phase: backend unit + integration, frontend, and e2e chaos verification |
+| 006 | [Testing & Verification](phases/006-testing-and-verification/DESIGN.md) | Backend unit + integration, frontend, and e2e chaos verification |
+| 008 | [Organization Onboarding](phases/008-organization-onboarding/DESIGN.md) | Countries + org types master data, organization onboarding API, transactional outbox publishing `organization.onboarded` |
 
-Build order: 001 → 002 → 025 → (003, 004 in parallel) → 005 → **006 (testing, last)**. Phase 025
-slots logically between 002 and 003 (the `025` label denotes "phase 2.5"); 006 is the final phase.
+Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008**. Phase 007 (formerly
+`025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies phases 001–007, and
+008 is the latest feature increment (with its own tests folded back into the 006 suites).
 
 ## 9. Cross-cutting non-functional posture
 
@@ -191,8 +203,14 @@ slots logically between 002 and 003 (the `025` label denotes "phase 2.5"); 006 i
    model it symmetric to `collection.completed` (money out: org VA debited → platform float
    credited, fees to revenue, invariant `gross = net + Σfees`, `source = disbursements-service`).
    Confirm topic name + field set against the ledger when its disbursement consumer lands.
-5. **Chart of accounts is provisioned via the ledger HTTP API** ([Phase 025](phases/025-chart-of-accounts-http-bootstrap/DESIGN.md));
+5. **Chart of accounts is provisioned via the ledger HTTP API** ([Phase 007](phases/007-chart-of-accounts-http-bootstrap/DESIGN.md));
    VA ids are ledger-assigned. If the ledger seeds its own SYSTEM accounts, set
    `chaos.bootstrap.provision-on-startup=false` and the chaos machine adopts existing ids by code.
+6. **`organization.onboarded` `country` object carries `status` + `modified_date`** in the
+   authoritative ss-ledger-service sample (`bin/publish-organization-onboarded.sh`), which the
+   current `OrganizationOnboardedEventData.Country` record omits. [Phase 008](phases/008-organization-onboarding/DESIGN.md)
+   extends that record to match. The sample also uses an **ISO 3166-1 alpha-2** `iso_code` (`GH`),
+   so the country `iso_code` column is widened/relaxed from the prior 3-char assumption. Verified
+   against the sibling repo; re-confirm if the ledger contract changes.
 
 These are safe-to-proceed defaults; revise here if the complete MANIFEST / ledger contract differs.

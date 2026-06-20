@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -43,11 +44,18 @@ public record OrganizationOnboardedEventData(
   /**
    * Country information.
    *
-   * @param id       the country ID
-   * @param name     the country name
-   * @param isoCode  the ISO country code
+   * @param id           the country ID
+   * @param name         the country name
+   * @param isoCode      the ISO country code
+   * @param status       the country status
+   * @param modifiedDate the country last-modified timestamp
    */
   @RecordBuilder
   @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-  public record Country(String id, String name, @JsonProperty("iso_code") String isoCode) {}
+  public record Country(
+      String id,
+      String name,
+      @JsonProperty("iso_code") String isoCode,
+      String status,
+      @JsonProperty("modified_date") Instant modifiedDate) {}
 }

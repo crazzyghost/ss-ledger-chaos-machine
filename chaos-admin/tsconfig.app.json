@@ -1,0 +1,44 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "src/main.tsx",
+    "src/vite-env.d.ts",
+    "src/app/**/*.ts",
+    "src/app/**/*.tsx",
+    "src/components/layout/**/*.ts",
+    "src/components/layout/**/*.tsx",
+    "src/components/ui/**/*.ts",
+    "src/components/ui/**/*.tsx",
+    "src/features/auth/**/*.ts",
+    "src/features/auth/**/*.tsx",
+    "src/features/chart-of-accounts/**/*.ts",
+    "src/features/chart-of-accounts/**/*.tsx",
+    "src/features/virtual-accounts/**/*.ts",
+    "src/features/virtual-accounts/**/*.tsx",
+    "src/features/transactions/**/*.ts",
+    "src/features/transactions/**/*.tsx",
+    "src/features/chaos/**/*.ts",
+    "src/features/chaos/**/*.tsx",
+    "src/lib/**/*.ts"
+  ]
+}

@@ -1,0 +1,3 @@
+- auto generate uuids
+- 3-payload flows should store uuids and use the same for the transaction ids
+- Transaction ids should be selectable

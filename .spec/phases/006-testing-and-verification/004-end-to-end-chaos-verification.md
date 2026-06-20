@@ -8,7 +8,7 @@
 
 ## Acceptance Criteria
 - [ ] A compose/Testcontainers topology brings up Kafka + Postgres + `ss-ledger-service` + the
-      chaos backend, and bootstraps the chart of accounts via HTTP (Phase 025).
+      chaos backend, and bootstraps the chart of accounts via HTTP (Phase 007).
 - [ ] A well-formed run per representative flow (collection, **disbursement**, settlement
       sequence, treasury) is consumed and recorded by the ledger (assert via the ledger's read
       API through the proxy).

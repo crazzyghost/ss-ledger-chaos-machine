@@ -17,7 +17,7 @@ Scope by phase:
   `ApiError` mapping per exception family; producer config assertions.
 - **Phase 002:** flow-slot resolution precedence branches; VA registry rules (SYSTEM vs ORG,
   org create-or-link); CoA config edits + cache eviction.
-- **Phase 025:** catalog validation (unique/blank codes, parent resolution, cycle detection,
+- **Phase 007:** catalog validation (unique/blank codes, parent resolution, cycle detection,
   topological order); provisioning response mapping; 409-adopt-existing logic (client unit, mocked).
 - **Phase 003:** engine resolve→build→chaos→publish orchestration (stub publisher/history);
   per-flow builder contract tests vs fixtures; each chaos strategy's `expand()`
@@ -46,7 +46,7 @@ flowchart LR
 - Whole unit suite < 30s locally. Deterministic (fixed clock, fixed ULID seed where needed).
 
 ## Dependencies
-All backend phases (001, 002, 025, 003, 004) for code under test.
+All backend phases (001, 002, 007, 003, 004, 008) for code under test.
 
 ## Risks & Mitigations
 - *Coverage gate flakiness on generated builders* → exclude `*Builder` per inherited gate config.

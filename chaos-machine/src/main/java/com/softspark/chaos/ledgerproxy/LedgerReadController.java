@@ -151,6 +151,6 @@ public class LedgerReadController {
   }
 
   private <T> PageResponse<T> toPageResponse(LedgerPageDto<T> page) {
-    return new PageResponse<>(page.content(), page.number(), page.size(), page.totalElements());
+    return new PageResponse<>(page.data(), page.page(), page.pageSize(), page.total());
   }
 }

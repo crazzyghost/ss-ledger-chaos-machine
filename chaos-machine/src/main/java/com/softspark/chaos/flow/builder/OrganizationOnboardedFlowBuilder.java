@@ -8,6 +8,7 @@ import com.softspark.chaos.flow.model.v1.OrganizationOnboardedEventData;
 import com.softspark.chaos.kafka.EventEnvelope;
 import com.softspark.chaos.kafka.EventMetadata;
 import com.softspark.chaos.kafka.TopicCatalog;
+import java.time.Instant;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
@@ -43,7 +44,11 @@ public class OrganizationOnboardedFlowBuilder
             f.getRequired("type_id"), f.getRequired("type_name"));
     var country =
         new OrganizationOnboardedEventData.Country(
-            f.getRequired("country_id"), f.getRequired("country_name"), f.getRequired("iso_code"));
+            f.getRequired("country_id"),
+            f.getRequired("country_name"),
+            f.getRequired("iso_code"),
+            f.getOptional("country_status"),
+            parseInstant(f.getOptional("country_modified_date")));
 
     var data =
         new OrganizationOnboardedEventData(
@@ -72,5 +77,9 @@ public class OrganizationOnboardedFlowBuilder
   public String partitionKey(FlowContext ctx) {
     String id = ctx.request().flowFields().getOrDefault("id", ctx.eventId()).toString();
     return id;
+  }
+
+  private static Instant parseInstant(String value) {
+    return value != null && !value.isBlank() ? Instant.parse(value) : null;
   }
 }

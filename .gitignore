@@ -1,5 +1,5 @@
-.ref/
+.DS_Store
 .idea/
 ss-ledger-service
 swift-admin
-.DS_Store
+.vscode/

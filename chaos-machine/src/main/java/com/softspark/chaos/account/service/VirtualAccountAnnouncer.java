@@ -1,9 +1,7 @@
 package com.softspark.chaos.account.service;
 
 import com.softspark.chaos.account.enumeration.AccountOwnershipType;
-import com.softspark.chaos.account.model.Organization;
 import com.softspark.chaos.account.model.VirtualAccount;
-import com.softspark.chaos.account.repository.OrganizationRepository;
 import com.softspark.chaos.account.repository.VirtualAccountRepository;
 import com.softspark.chaos.base.Ids;
 import com.softspark.chaos.exception.NotFoundException;
@@ -13,6 +11,8 @@ import com.softspark.chaos.kafka.ChaosEventPublisher;
 import com.softspark.chaos.kafka.EventEnvelopeBuilder;
 import com.softspark.chaos.kafka.EventMetadataBuilder;
 import com.softspark.chaos.kafka.TopicCatalog;
+import com.softspark.chaos.organization.model.Organization;
+import com.softspark.chaos.organization.repository.OrganizationRepository;
 import java.time.Instant;
 import java.util.List;
 import org.slf4j.Logger;
@@ -139,9 +139,9 @@ public class VirtualAccountAnnouncer {
             new OrganizationOnboardedEventData.Country(
                 organization.getCountryIsoCode() != null ? organization.getCountryIsoCode() : "GHA",
                 organization.getCountryName() != null ? organization.getCountryName() : "Ghana",
-                organization.getCountryIsoCode() != null
-                    ? organization.getCountryIsoCode()
-                    : "GHA"),
+                organization.getCountryIsoCode() != null ? organization.getCountryIsoCode() : "GHA",
+                organization.getCountryStatus(),
+                organization.getCountryModifiedDate()),
             null,
             List.of(),
             organization.getStatus().name());

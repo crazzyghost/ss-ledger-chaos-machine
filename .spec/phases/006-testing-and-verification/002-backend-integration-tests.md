@@ -10,7 +10,7 @@
       is green and wired into `check` (mirrors the ledger's Gradle setup).
 - [ ] **Publishing:** each flow publishes to the right topic; a console/consumer reads JSON
       identical to its fixture (all 12 flows, incl. `disbursement.completed`).
-- [ ] **CoA HTTP bootstrap (Phase 025):** against WireMock ledger — happy path stores
+- [ ] **CoA HTTP bootstrap (Phase 007):** against WireMock ledger — happy path stores
       ledger-returned ids; `409` → adopts existing; 5xx/timeout retries; ledger-down → `PENDING`
       then reconcile → `PROVISIONED`; chaos DB holds real ids.
 - [ ] **Persistence:** Flyway migrates a temp SQLite file; concurrent virtual-thread history
