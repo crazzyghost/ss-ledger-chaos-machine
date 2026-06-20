@@ -38,6 +38,19 @@ const BatchRunPage = lazy(() =>
 const BatchesPage = lazy(() =>
   import("@/features/chaos/batches-page").then(m => ({ default: m.BatchesPage }))
 );
+const CountriesPage = lazy(() =>
+  import("@/features/countries/countries-page").then(m => ({ default: m.CountriesPage }))
+);
+const OrganizationTypesPage = lazy(() =>
+  import("@/features/organization-types/organization-types-page").then(m => ({
+    default: m.OrganizationTypesPage
+  }))
+);
+const OrganizationsPage = lazy(() =>
+  import("@/features/organizations/organizations-page").then(m => ({
+    default: m.OrganizationsPage
+  }))
+);
 
 function withSuspense(node: ReactNode) {
   return (
@@ -104,6 +117,19 @@ export const router = createBrowserRouter([
           {
             path: "/virtual-accounts/:vaId",
             element: withSuspense(<VirtualAccountDetailPage />)
+          },
+          // Organizations
+          {
+            path: "/countries",
+            element: withSuspense(<CountriesPage />)
+          },
+          {
+            path: "/organization-types",
+            element: withSuspense(<OrganizationTypesPage />)
+          },
+          {
+            path: "/organizations",
+            element: withSuspense(<OrganizationsPage />)
           },
           // Ledger
           {

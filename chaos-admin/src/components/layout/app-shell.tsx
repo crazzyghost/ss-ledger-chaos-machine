@@ -3,11 +3,14 @@ import { cn } from "@/lib/utils";
 import {
   Activity,
   BookOpen,
+  Building2,
   ChevronRight,
   FileText,
+  Globe,
   LayersIcon,
   LogOut,
   Play,
+  Tags,
   Wallet
 } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
@@ -26,6 +29,12 @@ const operateNavigation: NavItem[] = [
 const accountsNavigation: NavItem[] = [
   { to: "/chart-of-accounts", label: "Chart of Accounts", icon: BookOpen },
   { to: "/virtual-accounts", label: "Virtual Accounts", icon: Wallet }
+];
+
+const organizationsNavigation: NavItem[] = [
+  { to: "/countries", label: "Countries", icon: Globe },
+  { to: "/organization-types", label: "Organization Types", icon: Tags },
+  { to: "/organizations", label: "Organizations", icon: Building2 }
 ];
 
 const ledgerNavigation: NavItem[] = [
@@ -118,6 +127,7 @@ export function AppShell() {
           <nav className="flex-1 space-y-3 px-3 py-3">
             <NavGroup label="Operate" items={operateNavigation} />
             <NavGroup label="Accounts" items={accountsNavigation} />
+            <NavGroup label="Organizations" items={organizationsNavigation} />
             <NavGroup label="Ledger" items={ledgerNavigation} />
           </nav>
 

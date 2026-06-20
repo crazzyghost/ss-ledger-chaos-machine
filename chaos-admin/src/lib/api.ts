@@ -653,3 +653,179 @@ export function listBatchRows(
 export function isBatchTerminal(status: BatchRunStatus): boolean {
   return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
 }
+
+// ---------------------------------------------------------------------------
+// Organization Onboarding DTOs — Countries
+// ---------------------------------------------------------------------------
+
+export type CountryStatus = "ACTIVE" | "INACTIVE" | string;
+
+export type CountryResponse = {
+  countryId: string;
+  name: string;
+  isoCode: string;
+  status: CountryStatus;
+  modifiedDate: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateCountryRequest = {
+  name: string;
+  isoCode: string;
+  status?: string;
+  modifiedDate?: string;
+};
+
+export type UpdateCountryRequest = CreateCountryRequest;
+
+// ---------------------------------------------------------------------------
+// Organization Type DTOs
+// ---------------------------------------------------------------------------
+
+export type OrganizationTypeResponse = {
+  organizationTypeId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateOrganizationTypeRequest = { name: string };
+export type UpdateOrganizationTypeRequest = { name: string };
+
+// ---------------------------------------------------------------------------
+// Organization DTOs
+// ---------------------------------------------------------------------------
+
+export type OrganizationStatus =
+  | "ACTIVE"
+  | "SUSPENDED"
+  | "DORMANT"
+  | "CLOSED"
+  | string;
+
+export type OrganizationResponse = {
+  organizationId: string;
+  name: string;
+  organizationTypeId: string | null;
+  countryId: string | null;
+  typeName: string | null;
+  countryName: string | null;
+  countryIsoCode: string | null;
+  countryStatus: string | null;
+  countryModifiedDate: string | null;
+  primaryContactEmail: string | null;
+  phoneNumbers: string[];
+  status: OrganizationStatus;
+  createdAt: string;
+  updatedAt: string;
+  eventId: string | null;
+};
+
+export type CreateOrganizationRequest = {
+  name: string;
+  organizationTypeId: string;
+  countryId: string;
+  primaryContactEmail?: string;
+  phoneNumbers?: string[];
+  status?: string;
+};
+
+// ---------------------------------------------------------------------------
+// API functions — Countries
+// ---------------------------------------------------------------------------
+
+export function listCountries(
+  token: string,
+  params: { page?: number; perPage?: number } = {}
+): Promise<PageResponse<CountryResponse>> {
+  const { page = 0, perPage = 20 } = params;
+  return request<PageResponse<CountryResponse>>("/countries", {
+    token,
+    query: { page, perPage }
+  });
+}
+
+export function createCountry(
+  token: string,
+  body: CreateCountryRequest
+): Promise<CountryResponse> {
+  return request<CountryResponse>("/countries", { token, method: "POST", body });
+}
+
+export function updateCountry(
+  token: string,
+  countryId: string,
+  body: UpdateCountryRequest
+): Promise<CountryResponse> {
+  return request<CountryResponse>(`/countries/${encodeURIComponent(countryId)}`, {
+    token,
+    method: "PUT",
+    body
+  });
+}
+
+// ---------------------------------------------------------------------------
+// API functions — Organization Types
+// ---------------------------------------------------------------------------
+
+export function listOrganizationTypes(
+  token: string,
+  params: { page?: number; perPage?: number } = {}
+): Promise<PageResponse<OrganizationTypeResponse>> {
+  const { page = 0, perPage = 20 } = params;
+  return request<PageResponse<OrganizationTypeResponse>>("/organization-types", {
+    token,
+    query: { page, perPage }
+  });
+}
+
+export function createOrganizationType(
+  token: string,
+  body: CreateOrganizationTypeRequest
+): Promise<OrganizationTypeResponse> {
+  return request<OrganizationTypeResponse>("/organization-types", {
+    token,
+    method: "POST",
+    body
+  });
+}
+
+export function updateOrganizationType(
+  token: string,
+  organizationTypeId: string,
+  body: UpdateOrganizationTypeRequest
+): Promise<OrganizationTypeResponse> {
+  return request<OrganizationTypeResponse>(
+    `/organization-types/${encodeURIComponent(organizationTypeId)}`,
+    { token, method: "PUT", body }
+  );
+}
+
+// ---------------------------------------------------------------------------
+// API functions — Organizations
+// ---------------------------------------------------------------------------
+
+export function listOrganizations(
+  token: string,
+  params: { page?: number; perPage?: number } = {}
+): Promise<PageResponse<OrganizationResponse>> {
+  const { page = 0, perPage = 20 } = params;
+  return request<PageResponse<OrganizationResponse>>("/organizations", {
+    token,
+    query: { page, perPage }
+  });
+}
+
+export function getOrganization(token: string, organizationId: string): Promise<OrganizationResponse> {
+  return request<OrganizationResponse>(`/organizations/${encodeURIComponent(organizationId)}`, {
+    token
+  });
+}
+
+export function onboardOrganization(
+  token: string,
+  body: CreateOrganizationRequest
+): Promise<OrganizationResponse> {
+  return request<OrganizationResponse>("/organizations", { token, method: "POST", body });
+}
