@@ -5,8 +5,10 @@ import {
   BookOpen,
   Building2,
   ChevronRight,
+  Coins,
   FileText,
   Globe,
+  Globe2,
   LayersIcon,
   LogOut,
   Play,
@@ -33,6 +35,8 @@ const accountsNavigation: NavItem[] = [
 
 const organizationsNavigation: NavItem[] = [
   { to: "/countries", label: "Countries", icon: Globe },
+  { to: "/currencies", label: "Currencies", icon: Coins },
+  { to: "/supported-countries", label: "Supported Countries", icon: Globe2 },
   { to: "/organization-types", label: "Organization Types", icon: Tags },
   { to: "/organizations", label: "Organizations", icon: Building2 }
 ];

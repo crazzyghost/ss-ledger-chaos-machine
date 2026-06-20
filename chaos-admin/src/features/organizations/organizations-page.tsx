@@ -11,25 +11,28 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog";
+import { AsyncSearchSelect } from "@/components/ui/async-search-select";
 import { EnumBadge } from "@/components/ui/enum-badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SortableTH } from "@/components/ui/sortable-header";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useSession } from "@/features/auth/session-provider";
 import {
-  listCountries,
   listOrganizations,
   listOrganizationTypes,
+  listSupportedCountries,
   onboardOrganization,
+  type CurrencyRefResponse,
   type OrganizationResponse
 } from "@/lib/api";
+import { useListControls } from "@/lib/use-list-controls";
 import { formatDate } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, CheckCircle2, Plus, Trash2, X } from "lucide-react";
+import { Building2, CheckCircle2, Plus, Search, Trash2, X } from "lucide-react";
 import { useState } from "react";
 
 const PER_PAGE = 20;
-const SELECT_PAGE = 200; // load reference data for selects
 
 const STATUS_OPTIONS = [
   { value: "ACTIVE", label: "Active" },
@@ -57,36 +60,31 @@ function OnboardOrganizationDialog({ onSuccess }: { onSuccess: (result: OnboardS
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [organizationTypeId, setOrganizationTypeId] = useState("");
+  const [typeLabel, setTypeLabel] = useState("");
   const [countryId, setCountryId] = useState("");
+  const [countryLabel, setCountryLabel] = useState("");
+  const [resolvedCurrency, setResolvedCurrency] = useState<CurrencyRefResponse | null>(null);
   const [primaryContactEmail, setPrimaryContactEmail] = useState("");
   const [phoneNumbers, setPhoneNumbers] = useState<string[]>([""]);
   const [status, setStatus] = useState<StatusValue>("ACTIVE");
   const [formError, setFormError] = useState<string | null>(null);
 
-  const typesQuery = useQuery({
-    queryKey: ["organization-types", { perPage: SELECT_PAGE }],
-    queryFn: () => listOrganizationTypes(token!, { perPage: SELECT_PAGE }),
+  // Lightweight probe so we can prompt the operator when no supported countries exist yet.
+  const supportedCountQuery = useQuery({
+    queryKey: ["supported-countries-count"],
+    queryFn: () => listSupportedCountries(token!, { perPage: 1 }),
     enabled: open
   });
-  const countriesQuery = useQuery({
-    queryKey: ["countries", { perPage: SELECT_PAGE }],
-    queryFn: () => listCountries(token!, { perPage: SELECT_PAGE }),
-    enabled: open
-  });
-
-  const typeOptions = (typesQuery.data?.items ?? []).map((t) => ({
-    value: t.organizationTypeId,
-    label: t.name
-  }));
-  const countryOptions = (countriesQuery.data?.items ?? []).map((c) => ({
-    value: c.countryId,
-    label: c.isoCode ? `${c.name} (${c.isoCode})` : c.name
-  }));
+  const hasNoSupported =
+    !supportedCountQuery.isLoading && (supportedCountQuery.data?.total ?? 0) === 0;
 
   function reset() {
     setName("");
     setOrganizationTypeId("");
+    setTypeLabel("");
     setCountryId("");
+    setCountryLabel("");
+    setResolvedCurrency(null);
     setPrimaryContactEmail("");
     setPhoneNumbers([""]);
     setStatus("ACTIVE");
@@ -173,27 +171,78 @@ function OnboardOrganizationDialog({ onSuccess }: { onSuccess: (result: OnboardS
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-medium">Organization Type</label>
-              <Select
+              <AsyncSearchSelect
                 value={organizationTypeId}
-                onChange={setOrganizationTypeId}
-                options={typeOptions}
-                placeholder={typesQuery.isLoading ? "Loading…" : "Select type…"}
-                searchable
+                selectedLabel={typeLabel}
+                enabled={open}
+                queryKey={["organization-types-select"]}
+                fetchOptions={async (s) => {
+                  const res = await listOrganizationTypes(token!, {
+                    perPage: 50,
+                    search: s || undefined,
+                    sortBy: "name",
+                    sortDir: "asc"
+                  });
+                  return res.items.map((t) => ({ value: t.organizationTypeId, label: t.name }));
+                }}
+                onChange={(v, opt) => {
+                  setOrganizationTypeId(v);
+                  setTypeLabel(opt?.label ?? "");
+                }}
+                placeholder="Select type…"
                 searchPlaceholder="Search types…"
               />
             </div>
             <div className="space-y-1.5">
               <label className="text-xs font-medium">Country</label>
-              <Select
+              <AsyncSearchSelect<CurrencyRefResponse | null>
                 value={countryId}
-                onChange={setCountryId}
-                options={countryOptions}
-                placeholder={countriesQuery.isLoading ? "Loading…" : "Select country…"}
-                searchable
+                selectedLabel={countryLabel}
+                enabled={open}
+                queryKey={["supported-countries-select"]}
+                fetchOptions={async (s) => {
+                  const res = await listSupportedCountries(token!, {
+                    perPage: 50,
+                    search: s || undefined,
+                    sortBy: "country",
+                    sortDir: "asc"
+                  });
+                  return res.items
+                    .filter((sc) => sc.country)
+                    .map((sc) => ({
+                      value: sc.country!.countryId,
+                      label: sc.country!.isoCode
+                        ? `${sc.country!.name} (${sc.country!.isoCode})`
+                        : sc.country!.name,
+                      data: sc.country!.primaryCurrency
+                    }));
+                }}
+                onChange={(v, opt) => {
+                  setCountryId(v);
+                  setCountryLabel(opt?.label ?? "");
+                  setResolvedCurrency(opt?.data ?? null);
+                }}
+                placeholder="Select country…"
                 searchPlaceholder="Search countries…"
               />
             </div>
           </div>
+          {countryId && (
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+              <span className="text-muted-foreground">Primary currency: </span>
+              <span className="font-medium">
+                {resolvedCurrency
+                  ? `${resolvedCurrency.code} — ${resolvedCurrency.name}`
+                  : "none set for this country"}
+              </span>
+            </div>
+          )}
+          {hasNoSupported && (
+            <InlineNotice
+              description="No supported countries yet. Add one on the Supported Countries page before onboarding."
+              tone="warning"
+            />
+          )}
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Primary Contact Email (optional)</label>
             <Input
@@ -255,12 +304,20 @@ function OnboardOrganizationDialog({ onSuccess }: { onSuccess: (result: OnboardS
 
 export function OrganizationsPage() {
   const { token } = useSession();
-  const [page, setPage] = useState(0);
+  const { page, setPage, search, setSearch, debouncedSearch, sort, toggleSort, sortBy, sortDir } =
+    useListControls({ by: "createdAt", dir: "desc" });
   const [lastOnboard, setLastOnboard] = useState<OnboardSuccess | null>(null);
 
   const query = useQuery({
-    queryKey: ["organizations", { page }],
-    queryFn: () => listOrganizations(token!, { page, perPage: PER_PAGE })
+    queryKey: ["organizations", { page, search: debouncedSearch, sortBy, sortDir }],
+    queryFn: () =>
+      listOrganizations(token!, {
+        page,
+        perPage: PER_PAGE,
+        search: debouncedSearch || undefined,
+        sortBy,
+        sortDir
+      })
   });
 
   const organizations = query.data?.items ?? [];
@@ -298,6 +355,16 @@ export function OrganizationsPage() {
             </div>
           )}
 
+          <div className="relative w-full md:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, type, country, or email"
+            />
+          </div>
+
           {query.isLoading ? (
             <TableContainer className="flex-1 border-y border-border bg-card">
               <Table>
@@ -334,11 +401,16 @@ export function OrganizationsPage() {
               <Table>
                 <THead>
                   <TR>
-                    <TH>Name</TH>
+                    <SortableTH label="Name" field="name" sort={sort} onSort={toggleSort} />
                     <TH>Type</TH>
                     <TH>Country</TH>
-                    <TH>Status</TH>
-                    <TH>Created</TH>
+                    <SortableTH label="Status" field="status" sort={sort} onSort={toggleSort} />
+                    <SortableTH
+                      label="Created"
+                      field="createdAt"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
                   </TR>
                 </THead>
                 <TBody>

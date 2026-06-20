@@ -41,6 +41,14 @@ const BatchesPage = lazy(() =>
 const CountriesPage = lazy(() =>
   import("@/features/countries/countries-page").then(m => ({ default: m.CountriesPage }))
 );
+const CurrenciesPage = lazy(() =>
+  import("@/features/currencies/currencies-page").then(m => ({ default: m.CurrenciesPage }))
+);
+const SupportedCountriesPage = lazy(() =>
+  import("@/features/supported-countries/supported-countries-page").then(m => ({
+    default: m.SupportedCountriesPage
+  }))
+);
 const OrganizationTypesPage = lazy(() =>
   import("@/features/organization-types/organization-types-page").then(m => ({
     default: m.OrganizationTypesPage
@@ -122,6 +130,14 @@ export const router = createBrowserRouter([
           {
             path: "/countries",
             element: withSuspense(<CountriesPage />)
+          },
+          {
+            path: "/currencies",
+            element: withSuspense(<CurrenciesPage />)
+          },
+          {
+            path: "/supported-countries",
+            element: withSuspense(<SupportedCountriesPage />)
           },
           {
             path: "/organization-types",

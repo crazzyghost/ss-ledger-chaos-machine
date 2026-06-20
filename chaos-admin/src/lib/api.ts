@@ -129,6 +129,17 @@ export type PageResponse<T> = {
   total: number;
 };
 
+export type SortDirection = "asc" | "desc";
+
+// Shared list params for paginated, searchable, sortable reference-data endpoints.
+export type ListParams = {
+  page?: number;
+  perPage?: number;
+  search?: string;
+  sortBy?: string;
+  sortDir?: SortDirection;
+};
+
 // ---------------------------------------------------------------------------
 // Auth DTOs
 // ---------------------------------------------------------------------------
@@ -660,11 +671,19 @@ export function isBatchTerminal(status: BatchRunStatus): boolean {
 
 export type CountryStatus = "ACTIVE" | "INACTIVE" | string;
 
+export type CurrencyRefResponse = {
+  currencyId: string;
+  code: string;
+  name: string;
+};
+
 export type CountryResponse = {
   countryId: string;
   name: string;
   isoCode: string;
   status: CountryStatus;
+  primaryCurrencyId: string | null;
+  primaryCurrency: CurrencyRefResponse | null;
   modifiedDate: string;
   createdAt: string;
   updatedAt: string;
@@ -674,10 +693,69 @@ export type CreateCountryRequest = {
   name: string;
   isoCode: string;
   status?: string;
+  primaryCurrencyId?: string | null;
   modifiedDate?: string;
 };
 
 export type UpdateCountryRequest = CreateCountryRequest;
+
+export type SeedSummary = {
+  fetched: number;
+  currenciesUpserted: number;
+  countriesUpserted: number;
+  skipped: boolean;
+  error: string | null;
+};
+
+// ---------------------------------------------------------------------------
+// Currency DTOs
+// ---------------------------------------------------------------------------
+
+export type CurrencyStatus = "ACTIVE" | "INACTIVE" | string;
+
+export type CurrencyResponse = {
+  currencyId: string;
+  code: string;
+  name: string;
+  symbol: string | null;
+  status: CurrencyStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateCurrencyRequest = {
+  code: string;
+  name: string;
+  symbol?: string | null;
+  status?: string;
+};
+
+export type UpdateCurrencyRequest = CreateCurrencyRequest;
+
+// ---------------------------------------------------------------------------
+// Supported Country DTOs
+// ---------------------------------------------------------------------------
+
+export type SupportedCountryStatus = "ACTIVE" | "INACTIVE" | string;
+
+export type SupportedCountryResponse = {
+  supportedCountryId: string;
+  countryId: string;
+  status: SupportedCountryStatus;
+  country: {
+    countryId: string;
+    name: string;
+    isoCode: string;
+    primaryCurrency: CurrencyRefResponse | null;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateSupportedCountryRequest = {
+  countryId: string;
+  status?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Organization Type DTOs
@@ -714,6 +792,8 @@ export type OrganizationResponse = {
   countryIsoCode: string | null;
   countryStatus: string | null;
   countryModifiedDate: string | null;
+  primaryCurrencyId: string | null;
+  primaryCurrencyCode: string | null;
   primaryContactEmail: string | null;
   phoneNumbers: string[];
   status: OrganizationStatus;
@@ -737,12 +817,12 @@ export type CreateOrganizationRequest = {
 
 export function listCountries(
   token: string,
-  params: { page?: number; perPage?: number } = {}
+  params: ListParams = {}
 ): Promise<PageResponse<CountryResponse>> {
-  const { page = 0, perPage = 20 } = params;
+  const { page = 0, perPage = 20, search, sortBy, sortDir } = params;
   return request<PageResponse<CountryResponse>>("/countries", {
     token,
-    query: { page, perPage }
+    query: { page, perPage, search, sortBy, sortDir }
   });
 }
 
@@ -765,18 +845,89 @@ export function updateCountry(
   });
 }
 
+export function refreshCountries(token: string): Promise<SeedSummary> {
+  return request<SeedSummary>("/countries/refresh", { token, method: "POST" });
+}
+
+// ---------------------------------------------------------------------------
+// API functions — Currencies
+// ---------------------------------------------------------------------------
+
+export function listCurrencies(
+  token: string,
+  params: ListParams = {}
+): Promise<PageResponse<CurrencyResponse>> {
+  const { page = 0, perPage = 20, search, sortBy, sortDir } = params;
+  return request<PageResponse<CurrencyResponse>>("/currencies", {
+    token,
+    query: { page, perPage, search, sortBy, sortDir }
+  });
+}
+
+export function createCurrency(
+  token: string,
+  body: CreateCurrencyRequest
+): Promise<CurrencyResponse> {
+  return request<CurrencyResponse>("/currencies", { token, method: "POST", body });
+}
+
+export function updateCurrency(
+  token: string,
+  currencyId: string,
+  body: UpdateCurrencyRequest
+): Promise<CurrencyResponse> {
+  return request<CurrencyResponse>(`/currencies/${encodeURIComponent(currencyId)}`, {
+    token,
+    method: "PUT",
+    body
+  });
+}
+
+// ---------------------------------------------------------------------------
+// API functions — Supported Countries
+// ---------------------------------------------------------------------------
+
+export function listSupportedCountries(
+  token: string,
+  params: ListParams = {}
+): Promise<PageResponse<SupportedCountryResponse>> {
+  const { page = 0, perPage = 20, search, sortBy, sortDir } = params;
+  return request<PageResponse<SupportedCountryResponse>>("/supported-countries", {
+    token,
+    query: { page, perPage, search, sortBy, sortDir }
+  });
+}
+
+export function createSupportedCountry(
+  token: string,
+  body: CreateSupportedCountryRequest
+): Promise<SupportedCountryResponse> {
+  return request<SupportedCountryResponse>("/supported-countries", {
+    token,
+    method: "POST",
+    body
+  });
+}
+
+export function deleteSupportedCountry(token: string, supportedCountryId: string): Promise<void> {
+  return request<void>(`/supported-countries/${encodeURIComponent(supportedCountryId)}`, {
+    token,
+    method: "DELETE"
+  });
+}
+
 // ---------------------------------------------------------------------------
 // API functions — Organization Types
 // ---------------------------------------------------------------------------
 
 export function listOrganizationTypes(
   token: string,
-  params: { page?: number; perPage?: number } = {}
+  params: ListParams = {}
 ): Promise<PageResponse<OrganizationTypeResponse>> {
-  const { page = 0, perPage = 20 } = params;
+  const { page = 0, perPage = 20, search, sortBy, sortDir } = params;
   return request<PageResponse<OrganizationTypeResponse>>("/organization-types", {
     token,
-    query: { page, perPage }
+    query: { page, perPage, search, sortBy, sortDir }
   });
 }
 
@@ -808,12 +959,12 @@ export function updateOrganizationType(
 
 export function listOrganizations(
   token: string,
-  params: { page?: number; perPage?: number } = {}
+  params: ListParams = {}
 ): Promise<PageResponse<OrganizationResponse>> {
-  const { page = 0, perPage = 20 } = params;
+  const { page = 0, perPage = 20, search, sortBy, sortDir } = params;
   return request<PageResponse<OrganizationResponse>>("/organizations", {
     token,
-    query: { page, perPage }
+    query: { page, perPage, search, sortBy, sortDir }
   });
 }
 

@@ -11,18 +11,34 @@ import {
   DialogTitle,
   DialogTrigger
 } from "@/components/ui/dialog";
+import { AsyncSearchSelect } from "@/components/ui/async-search-select";
 import { EnumBadge } from "@/components/ui/enum-badge";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { SortableTH } from "@/components/ui/sortable-header";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useSession } from "@/features/auth/session-provider";
-import { createCountry, listCountries, updateCountry, type CountryResponse } from "@/lib/api";
+import {
+  createCountry,
+  listCountries,
+  listCurrencies,
+  refreshCountries,
+  updateCountry,
+  type CountryResponse
+} from "@/lib/api";
+import { useListControls } from "@/lib/use-list-controls";
 import { formatDate } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Globe, Pencil, Plus } from "lucide-react";
+import { Globe, Pencil, Plus, RefreshCw, Search } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 const PER_PAGE = 20;
+
+function currencyLabelOf(country?: CountryResponse): string {
+  return country?.primaryCurrency
+    ? `${country.primaryCurrency.code} — ${country.primaryCurrency.name}`
+    : "None";
+}
 
 const STATUS_OPTIONS = [
   { value: "ACTIVE", label: "Active" },
@@ -52,18 +68,27 @@ function CountryFormDialog({
   const [name, setName] = useState(country?.name ?? "");
   const [isoCode, setIsoCode] = useState(country?.isoCode ?? "");
   const [status, setStatus] = useState<StatusValue>((country?.status as StatusValue) ?? "ACTIVE");
+  const [primaryCurrencyId, setPrimaryCurrencyId] = useState(country?.primaryCurrencyId ?? "");
+  const [currencyLabel, setCurrencyLabel] = useState(currencyLabelOf(country));
   const [formError, setFormError] = useState<string | null>(null);
 
   function reset() {
     setName(country?.name ?? "");
     setIsoCode(country?.isoCode ?? "");
     setStatus((country?.status as StatusValue) ?? "ACTIVE");
+    setPrimaryCurrencyId(country?.primaryCurrencyId ?? "");
+    setCurrencyLabel(currencyLabelOf(country));
     setFormError(null);
   }
 
   const mutation = useMutation({
     mutationFn: () => {
-      const body = { name: name.trim(), isoCode: isoCode.trim().toUpperCase(), status };
+      const body = {
+        name: name.trim(),
+        isoCode: isoCode.trim().toUpperCase(),
+        status,
+        primaryCurrencyId: primaryCurrencyId || null
+      };
       return isEdit ? updateCountry(token!, country!.countryId, body) : createCountry(token!, body);
     },
     onSuccess: () => {
@@ -120,6 +145,33 @@ function CountryFormDialog({
             />
           </div>
           <div className="space-y-1.5">
+            <label className="text-xs font-medium">Primary Currency</label>
+            <AsyncSearchSelect
+              value={primaryCurrencyId}
+              selectedLabel={currencyLabel}
+              enabled={open}
+              queryKey={["currencies-select"]}
+              fetchOptions={async (s) => {
+                const res = await listCurrencies(token!, {
+                  perPage: 50,
+                  search: s || undefined,
+                  sortBy: "code",
+                  sortDir: "asc"
+                });
+                return [
+                  { value: "", label: "None" },
+                  ...res.items.map((c) => ({ value: c.currencyId, label: `${c.code} — ${c.name}` }))
+                ];
+              }}
+              onChange={(v, opt) => {
+                setPrimaryCurrencyId(v);
+                setCurrencyLabel(opt?.label ?? "None");
+              }}
+              placeholder="Select currency…"
+              searchPlaceholder="Search currencies…"
+            />
+          </div>
+          <div className="space-y-1.5">
             <label className="text-xs font-medium">Status</label>
             <Select value={status} onChange={setStatus} options={STATUS_OPTIONS} />
           </div>
@@ -144,11 +196,37 @@ function CountryFormDialog({
 
 export function CountriesPage() {
   const { token } = useSession();
-  const [page, setPage] = useState(0);
+  const queryClient = useQueryClient();
+  const { page, setPage, search, setSearch, debouncedSearch, sort, toggleSort, sortBy, sortDir } =
+    useListControls();
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
 
   const query = useQuery({
-    queryKey: ["countries", { page }],
-    queryFn: () => listCountries(token!, { page, perPage: PER_PAGE })
+    queryKey: ["countries", { page, search: debouncedSearch, sortBy, sortDir }],
+    queryFn: () =>
+      listCountries(token!, {
+        page,
+        perPage: PER_PAGE,
+        search: debouncedSearch || undefined,
+        sortBy,
+        sortDir
+      })
+  });
+
+  const refreshMutation = useMutation({
+    mutationFn: () => refreshCountries(token!),
+    onSuccess: (summary) => {
+      void queryClient.invalidateQueries({ queryKey: ["countries"] });
+      void queryClient.invalidateQueries({ queryKey: ["currencies"] });
+      setRefreshNotice(
+        summary.error
+          ? `Refresh failed: ${summary.error}`
+          : summary.skipped
+            ? "Refresh skipped (seeding disabled)."
+            : `Refreshed: ${summary.countriesUpserted} countries, ${summary.currenciesUpserted} currencies added.`
+      );
+    },
+    onError: (err) => setRefreshNotice(getErrorMessage(err))
   });
 
   const countries = query.data?.items ?? [];
@@ -161,18 +239,43 @@ export function CountriesPage() {
         title="Countries"
         description="Manage the countries available for organization onboarding."
         actions={
-          <CountryFormDialog
-            trigger={
-              <Button>
-                <Plus className="mr-1.5 h-4 w-4" />
-                Create Country
-              </Button>
-            }
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => refreshMutation.mutate()}
+              disabled={refreshMutation.isPending}
+            >
+              <RefreshCw className="mr-1.5 h-4 w-4" />
+              {refreshMutation.isPending ? "Refreshing…" : "Refresh"}
+            </Button>
+            <CountryFormDialog
+              trigger={
+                <Button>
+                  <Plus className="mr-1.5 h-4 w-4" />
+                  Create Country
+                </Button>
+              }
+            />
+          </div>
         }
       />
       <PageContent className="min-h-full grid-rows-[minmax(0,1fr)] px-0 py-0 md:px-0 md:py-0">
         <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
+          {refreshNotice && (
+            <InlineNotice
+              description={refreshNotice}
+              tone={refreshNotice.toLowerCase().includes("fail") ? "danger" : "default"}
+            />
+          )}
+          <div className="relative w-full md:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              className="pl-8"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name or ISO code"
+            />
+          </div>
           {query.isLoading ? (
             <TableContainer className="flex-1 border-y border-border bg-card">
               <Table>
@@ -180,13 +283,14 @@ export function CountriesPage() {
                   <TR>
                     <TH>Name</TH>
                     <TH>ISO Code</TH>
+                    <TH>Primary Currency</TH>
                     <TH>Status</TH>
                     <TH>Modified</TH>
                     <TH className="text-right">Actions</TH>
                   </TR>
                 </THead>
                 <TBody>
-                  <TableLoadingRows columns={5} rows={6} />
+                  <TableLoadingRows columns={6} rows={6} />
                 </TBody>
               </Table>
             </TableContainer>
@@ -209,10 +313,16 @@ export function CountriesPage() {
               <Table>
                 <THead>
                   <TR>
-                    <TH>Name</TH>
-                    <TH>ISO Code</TH>
-                    <TH>Status</TH>
-                    <TH>Modified</TH>
+                    <SortableTH label="Name" field="name" sort={sort} onSort={toggleSort} />
+                    <SortableTH label="ISO Code" field="isoCode" sort={sort} onSort={toggleSort} />
+                    <TH>Primary Currency</TH>
+                    <SortableTH label="Status" field="status" sort={sort} onSort={toggleSort} />
+                    <SortableTH
+                      label="Modified"
+                      field="modifiedDate"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
                     <TH className="text-right">Actions</TH>
                   </TR>
                 </THead>
@@ -221,6 +331,9 @@ export function CountriesPage() {
                     <TR key={country.countryId}>
                       <TD className="font-medium">{country.name}</TD>
                       <TD className="font-mono text-xs text-muted-foreground">{country.isoCode}</TD>
+                      <TD className="text-muted-foreground">
+                        {country.primaryCurrency ? country.primaryCurrency.code : "—"}
+                      </TD>
                       <TD>
                         <EnumBadge value={country.status} />
                       </TD>
