@@ -28,6 +28,7 @@ import {
   type SlotUpdate
 } from "@/lib/api";
 import { formatEnumValue } from "@/lib/utils";
+import { usePersistedTabs } from "@/lib/use-persisted-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, Play, RefreshCw } from "lucide-react";
 import { useState } from "react";
@@ -457,6 +458,7 @@ const PER_PAGE = 200; // load all VAs for selects
 
 export function ChartOfAccountsPage() {
   const { token } = useSession();
+  const [tab, setTab] = usePersistedTabs("tab", "roles");
 
   // Load VAs for select options in dialogs
   const vasQuery = useQuery({
@@ -476,7 +478,12 @@ export function ChartOfAccountsPage() {
         description="Configure account roles and flow slot assignments for the chaos machine."
       />
       <PageContent className="min-h-full grid-rows-[minmax(0,1fr)] px-0 py-0 md:px-0 md:py-0">
-        <Tabs defaultValue="roles" className="flex min-h-0 flex-1 flex-col">
+        <Tabs
+          value={tab}
+          defaultValue="roles"
+          onValueChange={setTab}
+          className="flex min-h-0 flex-1 flex-col"
+        >
           <TabsList>
             <TabsTrigger value="roles">Roles</TabsTrigger>
             <TabsTrigger value="flow-configs">Flow Slots</TabsTrigger>

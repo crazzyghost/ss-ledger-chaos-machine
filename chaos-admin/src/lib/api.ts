@@ -129,6 +129,16 @@ export type PageResponse<T> = {
   total: number;
 };
 
+// Cursor-paginated response wrapper (matches backend CursorPageResponse<T>). Used for
+// append-only ledger streams that are keyset-paginated rather than offset-paginated.
+export type CursorPage<T> = {
+  items: T[];
+  nextCursor: string | null;
+  previousCursor: string | null;
+  hasMore: boolean;
+  size: number;
+};
+
 export type SortDirection = "asc" | "desc";
 
 // Shared list params for paginated, searchable, sortable reference-data endpoints.
@@ -248,6 +258,7 @@ export type VirtualAccountResponse = {
   status: AccountStatus;
   channel: string | null;
   accountRole: AccountRole | null;
+  accountCategory: string | null;
   createdVia: string;
   createdAt: string;
   updatedAt: string;
@@ -419,17 +430,20 @@ export type BatchRowResponse = {
 // Ledger Proxy DTOs
 // ---------------------------------------------------------------------------
 
+// Mirrors the ledger service's account response shape (camelCase), passed through by the proxy.
 export type LedgerAccountDto = {
-  account_id: string;
-  account_code: string | null;
-  account_name: string | null;
-  account_category: string | null;
-  normal_balance: string | null;
+  accountId: string;
+  accountCode: string | null;
+  accountName: string | null;
+  accountCategory: string | null;
+  normalBalance: string | null;
   currency: string;
   status: string | null;
-  account_ownership_type: string | null;
-  organization_id: string | null;
-  parent_account_id: string | null;
+  accountOwnershipType: string | null;
+  organizationId: string | null;
+  parentAccountId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 };
 
 export type LedgerBalanceDto = {
@@ -464,6 +478,77 @@ export type LedgerTransactionFilters = {
   status?: string;
   from?: string;
   to?: string;
+};
+
+// A counterparty leg of a transaction-history record — one line in the same journal entry posted
+// against a different account than the one whose history is being viewed.
+export type LedgerCounterpartyLine = {
+  accountId: string | null;
+  accountCode: string | null;
+  accountName: string | null;
+  direction: string | null;
+  entryLineType: string | null;
+  amount: number | null;
+  memo: string | null;
+};
+
+// Mirrors the ledger's account transaction-history record (camelCase, passed through by the proxy).
+// One row per journal-entry line, enriched with parent-entry header fields and counterparty legs.
+export type LedgerTransactionHistoryRecord = {
+  lineId: string;
+  journalEntryId: string | null;
+  postedAt: string | null;
+  transactionRef: string | null;
+  entryType: string | null;
+  entryLineType: string | null;
+  direction: string | null;
+  amount: number | null;
+  currency: string | null;
+  runningBalance: number | null;
+  runningReservedBalance: number | null;
+  runningPendingBalance: number | null;
+  narrative: string | null;
+  memo: string | null;
+  entrySequence: number;
+  accountSequence: number;
+  primaryCounterpartyAccountId: string | null;
+  counterPartyJournalEntryLines: LedgerCounterpartyLine[] | null;
+};
+
+// Filters for the cursor-paginated account transaction-history endpoint. Note: this endpoint is
+// keyset-paginated — pages are walked via `cursor`, never an offset `page`.
+export type AccountTransactionHistoryFilters = {
+  cursor?: string;
+  size?: number;
+  from?: string;
+  to?: string;
+  entryType?: string;
+  direction?: string;
+  transactionRef?: string;
+};
+
+// One leg of a single transaction (resolved by transaction reference across all participating
+// accounts). Mirrors the ledger's camelCase TransactionReferenceHistoryRecord.
+export type LedgerTransactionReferenceRecord = {
+  lineId: string;
+  journalEntryId: string | null;
+  accountId: string | null;
+  accountOwnershipType: string | null;
+  accountOwnerId: string | null;
+  postedAt: string | null;
+  transactionRef: string | null;
+  entryType: string | null;
+  entryLineType: string | null;
+  direction: string | null;
+  amount: number | null;
+  currency: string | null;
+  runningBalance: number | null;
+  runningReservedBalance: number | null;
+  runningPendingBalance: number | null;
+  narrative: string | null;
+  memo: string | null;
+  entrySequence: number;
+  accountSequence: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -589,6 +674,26 @@ export function getSentHistoryRecord(token: string, id: string): Promise<Publish
 // API functions — Ledger Proxy
 // ---------------------------------------------------------------------------
 
+export type LedgerAccountFilters = {
+  page?: number;
+  size?: number;
+  ownershipType?: string;
+  organizationId?: string;
+  status?: string;
+  currency?: string;
+};
+
+export function listLedgerAccounts(
+  token: string,
+  filters: LedgerAccountFilters = {}
+): Promise<PageResponse<LedgerAccountDto>> {
+  const { page = 0, size = 20, ...rest } = filters;
+  return request<PageResponse<LedgerAccountDto>>("/ledger/accounts", {
+    token,
+    query: { page, size, ...rest }
+  });
+}
+
 export function getLedgerAccount(
   token: string,
   vaId: string
@@ -615,6 +720,32 @@ export function listLedgerTransactions(
     token,
     query: { page, size, ...rest }
   });
+}
+
+// Fetches a single cursor page of a virtual account's ledger transaction history. This is the
+// correct per-account history endpoint (the global /ledger/transactions list is offset-paginated
+// and not account-scoped). Pages are walked with the returned next/previous cursors.
+export function getAccountTransactionHistory(
+  token: string,
+  accountId: string,
+  filters: AccountTransactionHistoryFilters = {}
+): Promise<CursorPage<LedgerTransactionHistoryRecord>> {
+  return request<CursorPage<LedgerTransactionHistoryRecord>>(
+    `/ledger/accounts/${encodeURIComponent(accountId)}/transaction-history`,
+    { token, query: { ...filters } }
+  );
+}
+
+// Resolves a single transaction by reference into its individual legs (one per participating
+// account). Backs the transaction detail page.
+export function getTransactionByReference(
+  token: string,
+  ref: string
+): Promise<PageResponse<LedgerTransactionReferenceRecord>> {
+  return request<PageResponse<LedgerTransactionReferenceRecord>>(
+    `/ledger/transactions/${encodeURIComponent(ref)}`,
+    { token }
+  );
 }
 
 // ---------------------------------------------------------------------------

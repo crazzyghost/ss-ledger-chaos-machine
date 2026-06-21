@@ -81,3 +81,75 @@ export function getStatusBadgeVariant(status: string | null | undefined): BadgeV
 export function getEnumBadgeVariant(value: string | null | undefined): BadgeVariant {
   return getStatusBadgeVariant(value ?? "");
 }
+
+/**
+ * Color-codes a ledger entry type / entry-line type (the {@code EntryTypeEnum} values). Grouped by
+ * economic meaning: inflows green, outflows red, transfers/settlement neutral-ish, fees amber,
+ * reversals/adjustments distinct.
+ */
+export function getEntryTypeVariant(value: string | null | undefined): BadgeVariant {
+  switch (value?.toUpperCase()) {
+    case "COLLECTION":
+    case "TOPUP":
+    case "TREASURY_PREFUND":
+      return "success";
+    case "DISBURSEMENT":
+    case "TREASURY_SWEEP":
+      return "destructive";
+    case "FEE":
+      return "warning";
+    case "REVERSAL":
+      return "outline";
+    case "ADJUSTMENT":
+      return "neutral";
+    case "TRANSFER":
+    case "INTER_VA_TRANSFER":
+    case "TREASURY_TRANSFER":
+      return "secondary";
+    case "SETTLEMENT":
+      return "default";
+    default:
+      return "neutral";
+  }
+}
+
+/**
+ * Color-codes a journal-entry-line direction. CREDIT (typically funds-in for a normal-credit VA)
+ * reads as positive/green, DEBIT as a neutral movement.
+ */
+export function getDirectionVariant(direction: string | null | undefined): BadgeVariant {
+  switch (direction?.toUpperCase()) {
+    case "CREDIT":
+      return "success";
+    case "DEBIT":
+      return "neutral";
+    default:
+      return "secondary";
+  }
+}
+
+/**
+ * Color-codes an account category (ASSET / LIABILITY / EQUITY / REVENUE / EXPENSE / CONTRA),
+ * falling back to a variant derived from the ownership type when the category is unknown.
+ */
+export function getAccountCategoryVariant(
+  category?: string | null,
+  ownershipType?: string | null
+): BadgeVariant {
+  switch (category?.toUpperCase()) {
+    case "ASSET":
+      return "success";
+    case "LIABILITY":
+      return "warning";
+    case "EQUITY":
+      return "secondary";
+    case "REVENUE":
+      return "destructive";
+    case "EXPENSE":
+      return "outline";
+    case "CONTRA":
+      return "neutral";
+    default:
+      return ownershipType?.toUpperCase() === "SYSTEM" ? "destructive" : "secondary";
+  }
+}

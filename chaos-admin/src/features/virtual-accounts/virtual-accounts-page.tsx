@@ -15,17 +15,27 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import {
   createVirtualAccount,
   listCurrencies,
+  listLedgerAccounts,
+  listSupportedCountries,
   listVirtualAccounts,
+  type LedgerAccountFilters,
   type VirtualAccountFilters
 } from "@/lib/api";
-import { formatDate, formatEnumValue, getStatusBadgeVariant } from "@/lib/utils";
+import {
+  formatDate,
+  formatEnumValue,
+  getAccountCategoryVariant,
+  getStatusBadgeVariant
+} from "@/lib/utils";
+import { usePersistedTabs } from "@/lib/use-persisted-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Wallet } from "lucide-react";
-import { useState } from "react";
+import { Database, Plus, Wallet } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const PER_PAGE = 20;
@@ -42,6 +52,15 @@ const ACCOUNT_CATEGORY_OPTIONS = [
 
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
+}
+
+function isLedgerProxyUnavailable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: number }).status;
+  return (
+    status === 503 ||
+    (status === 500 && error.message.toLowerCase().includes("temporarily unavailable"))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -228,7 +247,7 @@ function CreateVirtualAccountDialog({ onRequested }: { onRequested: () => void }
 }
 
 // ---------------------------------------------------------------------------
-// Filters
+// Shared filters + table (used by both the Chaos Machine and Ledger tabs)
 // ---------------------------------------------------------------------------
 
 const OWNERSHIP_OPTIONS = [
@@ -247,38 +266,249 @@ const STATUS_OPTIONS = [
 ] as const;
 
 type Filters = {
-  ownershipType: string;
-  currency: string;
-  status: string;
   search: string;
+  ownershipType: string;
+  status: string;
+  currency: string;
 };
 
-const INITIAL_FILTERS: Filters = {
-  ownershipType: "",
-  currency: "",
-  status: "",
-  search: ""
+const INITIAL_FILTERS: Filters = { search: "", ownershipType: "", status: "", currency: "" };
+
+/**
+ * Currency filter options derived from the primary currencies of the supported countries
+ * (distinct, sorted). Shared across both account tables.
+ */
+function useSupportedCurrencyOptions(): { value: string; label: string }[] {
+  const { token } = useSession();
+  const query = useQuery({
+    queryKey: ["supported-country-currencies"],
+    queryFn: () => listSupportedCountries(token!, { perPage: 200 }),
+    staleTime: 5 * 60 * 1000
+  });
+
+  const codes = Array.from(
+    new Set(
+      (query.data?.items ?? [])
+        .map(sc => sc.country?.primaryCurrency?.code)
+        .filter((code): code is string => Boolean(code))
+    )
+  ).sort();
+
+  return [{ value: "", label: "All currencies" }, ...codes.map(c => ({ value: c, label: c }))];
+}
+
+/** Shared filter bar for both account tables. */
+function AccountFilters({
+  draft,
+  onDraftChange,
+  onApply,
+  onClear,
+  searchPlaceholder
+}: {
+  draft: Filters;
+  onDraftChange: (next: Filters) => void;
+  onApply: () => void;
+  onClear: () => void;
+  searchPlaceholder: string;
+}) {
+  const currencyOptions = useSupportedCurrencyOptions();
+
+  return (
+    <div className="border-b border-border bg-muted/30 px-6 py-3 md:px-8">
+      <div className="flex flex-wrap gap-2">
+        <Input
+          className="w-full md:max-w-xs"
+          value={draft.search}
+          onChange={e => onDraftChange({ ...draft, search: e.target.value })}
+          placeholder={searchPlaceholder}
+          onKeyDown={e => e.key === "Enter" && onApply()}
+        />
+        <Select
+          value={draft.ownershipType as typeof OWNERSHIP_OPTIONS[number]["value"]}
+          onChange={v => onDraftChange({ ...draft, ownershipType: v })}
+          options={OWNERSHIP_OPTIONS}
+          className="w-36"
+        />
+        <Select
+          value={draft.status as typeof STATUS_OPTIONS[number]["value"]}
+          onChange={v => onDraftChange({ ...draft, status: v })}
+          options={STATUS_OPTIONS}
+          className="w-36"
+        />
+        <Select
+          value={draft.currency}
+          onChange={v => onDraftChange({ ...draft, currency: v })}
+          options={currencyOptions}
+          placeholder="All currencies"
+          className="w-40"
+          searchable
+          searchPlaceholder="Search currencies…"
+        />
+        <Button variant="outline" size="sm" onClick={onApply}>
+          Apply
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onClear}>
+          Clear
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Unified row model rendered identically for chaos-machine VAs and ledger accounts. */
+type AccountRow = {
+  id: string;
+  name: string;
+  category: string | null;
+  currency: string | null;
+  ownershipType: string | null;
+  ownerId: string | null;
+  status: string | null;
+  createdAt: string | null;
 };
 
+const ACCOUNT_COLUMNS = (
+  <TR>
+    <TH>Name</TH>
+    <TH>Category</TH>
+    <TH>Currency</TH>
+    <TH>Owner</TH>
+    <TH>Status</TH>
+    <TH>Date created</TH>
+  </TR>
+);
+
+/** Shared table for both account tables: Name / Category / Owner / Status / Date created. */
+function AccountsTable({
+  rows,
+  isLoading,
+  error,
+  errorTitle,
+  errorDescription,
+  errorTone,
+  empty,
+  onRetry,
+  onRowClick
+}: {
+  rows: AccountRow[];
+  isLoading: boolean;
+  error: unknown;
+  errorTitle: string;
+  errorDescription: string;
+  errorTone: "danger" | "warning";
+  empty: { title: string; description: string; icon: ReactNode };
+  onRetry: () => void;
+  onRowClick: (id: string) => void;
+}) {
+  if (isLoading) {
+    return (
+      <TableContainer className="flex-1 border-y border-border bg-card">
+        <Table>
+          <THead>{ACCOUNT_COLUMNS}</THead>
+          <TBody>
+            <TableLoadingRows columns={6} rows={6} />
+          </TBody>
+        </Table>
+      </TableContainer>
+    );
+  }
+
+  if (error) {
+    return (
+      <StatePanel
+        title={errorTitle}
+        description={errorDescription}
+        tone={errorTone}
+        icon="error"
+        action={<Button onClick={onRetry}>Retry</Button>}
+      />
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <StatePanel title={empty.title} description={empty.description} iconNode={empty.icon} />
+    );
+  }
+
+  return (
+    <TableContainer className="flex-1 border-y border-border bg-card">
+      <Table>
+        <THead>{ACCOUNT_COLUMNS}</THead>
+        <TBody>
+          {rows.map(row => (
+            <TR
+              key={row.id}
+              role="button"
+              tabIndex={0}
+              className="cursor-pointer transition-colors hover:bg-muted/40 focus:bg-muted/40 focus:outline-none"
+              onClick={() => onRowClick(row.id)}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onRowClick(row.id);
+                }
+              }}
+            >
+              <TD className="font-medium">{row.name}</TD>
+              <TD>
+                {row.category ? (
+                  <Badge
+                    variant={getAccountCategoryVariant(row.category, row.ownershipType)}
+                    className="font-medium"
+                  >
+                    {formatEnumValue(row.category)}
+                  </Badge>
+                ) : (
+                  <span className="text-xs text-muted-foreground">—</span>
+                )}
+              </TD>
+              <TD>{row.currency ?? "—"}</TD>
+              <TD>
+                <div className="flex flex-col">
+                  <span className="text-xs text-muted-foreground">
+                    {row.ownershipType ? formatEnumValue(row.ownershipType) : "—"}
+                  </span>
+                  <span className="max-w-[12rem] truncate font-mono text-xs">
+                    {row.ownerId ?? "—"}
+                  </span>
+                </div>
+              </TD>
+              <TD>
+                {row.status ? (
+                  <Badge variant={getStatusBadgeVariant(row.status)}>
+                    {formatEnumValue(row.status)}
+                  </Badge>
+                ) : (
+                  "—"
+                )}
+              </TD>
+              <TD>{formatDate(row.createdAt)}</TD>
+            </TR>
+          ))}
+        </TBody>
+      </Table>
+    </TableContainer>
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Main Page
+// Chaos Machine Tab — the VA projection owned/mirrored by the chaos machine
 // ---------------------------------------------------------------------------
 
-export function VirtualAccountsPage() {
+function ChaosAccountsTab({ pollUntil }: { pollUntil: number }) {
   const { token } = useSession();
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [draft, setDraft] = useState<Filters>(INITIAL_FILTERS);
   const [applied, setApplied] = useState<Filters>(INITIAL_FILTERS);
-  // After requesting a VA, briefly poll the list so the async projection surfaces it.
-  const [pollUntil, setPollUntil] = useState(0);
 
   const filters: VirtualAccountFilters = {
     page,
     perPage: PER_PAGE,
     ownershipType: applied.ownershipType || undefined,
-    currency: applied.currency || undefined,
     status: applied.status || undefined,
+    currency: applied.currency || undefined,
     search: applied.search || undefined
   };
 
@@ -290,7 +520,16 @@ export function VirtualAccountsPage() {
 
   const isPolling = Date.now() < pollUntil;
 
-  const accounts = query.data?.items ?? [];
+  const rows: AccountRow[] = (query.data?.items ?? []).map(a => ({
+    id: a.vaId,
+    name: a.name,
+    category: a.accountCategory,
+    currency: a.currency,
+    ownershipType: a.ownershipType,
+    ownerId: a.organizationId,
+    status: a.status,
+    createdAt: a.createdAt
+  }));
   const total = query.data?.total ?? 0;
   const hasNextPage = (page + 1) * PER_PAGE < total;
 
@@ -306,10 +545,162 @@ export function VirtualAccountsPage() {
   }
 
   return (
+    <div className="flex min-h-0 flex-col">
+      <AccountFilters
+        draft={draft}
+        onDraftChange={setDraft}
+        onApply={applyFilters}
+        onClear={clearFilters}
+        searchPlaceholder="Search by name or ID"
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
+        {isPolling && (
+          <InlineNotice
+            title="Account requested"
+            description="The request was forwarded to the ledger. The account will appear here once the ledger.account.created event is consumed — refreshing automatically."
+            tone="default"
+          />
+        )}
+        <AccountsTable
+          rows={rows}
+          isLoading={query.isLoading}
+          error={query.error}
+          errorTitle="Failed to load virtual accounts"
+          errorDescription={getErrorMessage(query.error)}
+          errorTone="danger"
+          empty={{
+            title: "No virtual accounts found",
+            description: "No accounts match the current filter criteria.",
+            icon: <Wallet className="h-5 w-5" />
+          }}
+          onRetry={() => void query.refetch()}
+          onRowClick={id => navigate(`/virtual-accounts/${id}`)}
+        />
+        <ListPagination
+          page={page}
+          total={total}
+          pageSize={PER_PAGE}
+          itemLabel="account"
+          hasNextPage={hasNextPage}
+          disabled={query.isFetching}
+          onPrevious={() => setPage(p => Math.max(p - 1, 0))}
+          onNext={() => setPage(p => p + 1)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ledger Tab — the global, ledger-owned accounts (read via the proxy)
+// ---------------------------------------------------------------------------
+
+function LedgerAccountsTab() {
+  const { token } = useSession();
+  const navigate = useNavigate();
+  const [page, setPage] = useState(0);
+  const [draft, setDraft] = useState<Filters>(INITIAL_FILTERS);
+  const [applied, setApplied] = useState<Filters>(INITIAL_FILTERS);
+
+  const filters: LedgerAccountFilters = {
+    page,
+    size: PER_PAGE,
+    ownershipType: applied.ownershipType || undefined,
+    status: applied.status || undefined,
+    currency: applied.currency || undefined,
+    // The ledger list has no name search; reuse the shared search field as an org-id filter.
+    organizationId: applied.search || undefined
+  };
+
+  const query = useQuery({
+    queryKey: ["ledger-accounts", filters],
+    queryFn: () => listLedgerAccounts(token!, filters),
+    retry: false
+  });
+
+  const is503 = isLedgerProxyUnavailable(query.error);
+  const rows: AccountRow[] = (query.data?.items ?? []).map(a => ({
+    id: a.accountId,
+    name: a.accountName ?? a.accountCode ?? a.accountId,
+    category: a.accountCategory,
+    currency: a.currency,
+    ownershipType: a.accountOwnershipType,
+    ownerId: a.organizationId,
+    status: a.status,
+    createdAt: a.createdAt
+  }));
+  const total = query.data?.total ?? 0;
+  const hasNextPage = (page + 1) * PER_PAGE < total;
+
+  function applyFilters() {
+    setPage(0);
+    setApplied(draft);
+  }
+
+  function clearFilters() {
+    setPage(0);
+    setDraft(INITIAL_FILTERS);
+    setApplied(INITIAL_FILTERS);
+  }
+
+  return (
+    <div className="flex min-h-0 flex-col">
+      <AccountFilters
+        draft={draft}
+        onDraftChange={setDraft}
+        onApply={applyFilters}
+        onClear={clearFilters}
+        searchPlaceholder="Filter by organization ID"
+      />
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
+        <AccountsTable
+          rows={rows}
+          isLoading={query.isLoading}
+          error={query.error}
+          errorTitle={is503 ? "Ledger proxy degraded" : "Failed to load ledger accounts"}
+          errorDescription={
+            is503
+              ? "The ledger service is currently unavailable. Chaos-machine accounts are still accessible on the other tab."
+              : getErrorMessage(query.error)
+          }
+          errorTone={is503 ? "warning" : "danger"}
+          empty={{
+            title: "No ledger accounts found",
+            description: "No accounts match the current filter criteria.",
+            icon: <Database className="h-5 w-5" />
+          }}
+          onRetry={() => void query.refetch()}
+          onRowClick={id => navigate(`/virtual-accounts/${id}`)}
+        />
+        <ListPagination
+          page={page}
+          total={total}
+          pageSize={PER_PAGE}
+          itemLabel="account"
+          hasNextPage={hasNextPage}
+          disabled={query.isFetching}
+          onPrevious={() => setPage(p => Math.max(p - 1, 0))}
+          onNext={() => setPage(p => p + 1)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Page
+// ---------------------------------------------------------------------------
+
+export function VirtualAccountsPage() {
+  // After requesting a VA, briefly poll the chaos list so the async projection surfaces it.
+  const [pollUntil, setPollUntil] = useState(0);
+  const [tab, setTab] = usePersistedTabs("tab", "ledger");
+
+  return (
     <Page>
       <PageHeader
         title="Virtual Accounts"
-        description="Browse and request virtual accounts. The ledger owns VAs; new ones appear once confirmed."
+        description="Browse chaos-machine accounts and the global ledger. The ledger owns VAs; requested accounts appear once confirmed."
         actions={
           <CreateVirtualAccountDialog
             onRequested={() => setPollUntil(Date.now() + POLL_WINDOW_MS)}
@@ -317,154 +708,23 @@ export function VirtualAccountsPage() {
         }
       />
       <PageContent className="min-h-full grid-rows-[minmax(0,1fr)] px-0 py-0 md:px-0 md:py-0">
-        <div className="flex min-h-0 flex-col">
-          {/* Filter bar */}
-          <div className="border-b border-border bg-muted/30 px-6 py-3 md:px-8">
-            <div className="flex flex-wrap gap-2">
-              <Input
-                className="w-full md:max-w-xs"
-                value={draft.search}
-                onChange={e => setDraft(d => ({ ...d, search: e.target.value }))}
-                placeholder="Search by name or ID"
-                onKeyDown={e => e.key === "Enter" && applyFilters()}
-              />
-              <Select
-                value={draft.ownershipType as typeof OWNERSHIP_OPTIONS[number]["value"]}
-                onChange={v => setDraft(d => ({ ...d, ownershipType: v }))}
-                options={OWNERSHIP_OPTIONS}
-                className="w-36"
-              />
-              <Input
-                className="w-24"
-                value={draft.currency}
-                onChange={e => setDraft(d => ({ ...d, currency: e.target.value.toUpperCase() }))}
-                placeholder="Currency"
-                maxLength={3}
-              />
-              <Select
-                value={draft.status as typeof STATUS_OPTIONS[number]["value"]}
-                onChange={v => setDraft(d => ({ ...d, status: v }))}
-                options={STATUS_OPTIONS}
-                className="w-36"
-              />
-              <Button variant="outline" size="sm" onClick={applyFilters}>
-                Apply
-              </Button>
-              <Button variant="ghost" size="sm" onClick={clearFilters}>
-                Clear
-              </Button>
-            </div>
-          </div>
-
-          {/* Table */}
-          <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
-            {isPolling && (
-              <InlineNotice
-                title="Account requested"
-                description="The request was forwarded to the ledger. The account will appear here once the ledger.account.created event is consumed — refreshing automatically."
-                tone="default"
-              />
-            )}
-            {query.isLoading ? (
-              <TableContainer className="flex-1 border-y border-border bg-card">
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>Name</TH>
-                      <TH>VA ID</TH>
-                      <TH>Ownership</TH>
-                      <TH>Currency</TH>
-                      <TH>Status</TH>
-                      <TH>Channel</TH>
-                      <TH>Created</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    <TableLoadingRows columns={7} rows={6} />
-                  </TBody>
-                </Table>
-              </TableContainer>
-            ) : query.error ? (
-              <StatePanel
-                title="Failed to load virtual accounts"
-                description={getErrorMessage(query.error)}
-                tone="danger"
-                icon="error"
-                action={<Button onClick={() => void query.refetch()}>Retry</Button>}
-              />
-            ) : accounts.length === 0 ? (
-              <StatePanel
-                title="No virtual accounts found"
-                description="No accounts match the current filter criteria."
-                iconNode={<Wallet className="h-5 w-5" />}
-              />
-            ) : (
-              <TableContainer className="flex-1 border-y border-border bg-card">
-                <Table>
-                  <THead>
-                    <TR>
-                      <TH>Name</TH>
-                      <TH>VA ID</TH>
-                      <TH>Ownership</TH>
-                      <TH>Currency</TH>
-                      <TH>Status</TH>
-                      <TH>Channel</TH>
-                      <TH>Created</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {accounts.map(account => (
-                      <TR
-                        key={account.vaId}
-                        role="button"
-                        tabIndex={0}
-                        className="cursor-pointer transition-colors hover:bg-muted/40 focus:bg-muted/40 focus:outline-none"
-                        onClick={() => navigate(`/virtual-accounts/${account.vaId}`)}
-                        onKeyDown={e => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            navigate(`/virtual-accounts/${account.vaId}`);
-                          }
-                        }}
-                      >
-                        <TD className="font-medium">{account.name}</TD>
-                        <TD className="max-w-[12rem] truncate font-mono text-muted-foreground">
-                          {account.vaId}
-                        </TD>
-                        <TD>
-                          <Badge variant="secondary">
-                            {formatEnumValue(account.ownershipType)}
-                          </Badge>
-                        </TD>
-                        <TD>{account.currency}</TD>
-                        <TD>
-                          <Badge variant={getStatusBadgeVariant(account.status)}>
-                            {formatEnumValue(account.status)}
-                          </Badge>
-                        </TD>
-                        <TD className="text-muted-foreground">
-                          {account.channel ? formatEnumValue(account.channel) : "—"}
-                        </TD>
-                        <TD>{formatDate(account.createdAt)}</TD>
-                      </TR>
-                    ))}
-                  </TBody>
-                </Table>
-              </TableContainer>
-            )}
-
-            <ListPagination
-              page={page}
-              total={total}
-              pageSize={PER_PAGE}
-              itemLabel="account"
-              hasNextPage={hasNextPage}
-              disabled={query.isFetching}
-              onPrevious={() => setPage(p => Math.max(p - 1, 0))}
-              onNext={() => setPage(p => p + 1)}
-            />
-          </div>
-        </div>
+        <Tabs
+          value={tab}
+          defaultValue="ledger"
+          onValueChange={setTab}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <TabsList>
+            <TabsTrigger value="ledger">Ledger</TabsTrigger>
+            <TabsTrigger value="chaos">Chaos Machine</TabsTrigger>
+          </TabsList>
+          <TabsContent value="ledger" className="flex min-h-0 flex-1 flex-col">
+            <LedgerAccountsTab />
+          </TabsContent>
+          <TabsContent value="chaos" className="flex min-h-0 flex-1 flex-col">
+            <ChaosAccountsTab pollUntil={pollUntil} />
+          </TabsContent>
+        </Tabs>
       </PageContent>
     </Page>
   );

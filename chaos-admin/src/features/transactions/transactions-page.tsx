@@ -1,3 +1,4 @@
+import { CursorPagination } from "@/components/layout/cursor-pagination";
 import { JsonPanel } from "@/components/layout/json-panel";
 import { ListPagination } from "@/components/layout/list-pagination";
 import { Page, PageContent, PageHeader } from "@/components/layout/page";
@@ -12,21 +13,57 @@ import {
   DialogTitle
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import {
+  getAccountTransactionHistory,
+  getLedgerAccount,
   listSentHistory,
   listLedgerTransactions,
   type HistoryFilters,
   type LedgerTransactionFilters,
+  type LedgerTransactionHistoryRecord,
   type PublishRecordResponse,
   type LedgerTransactionDto
 } from "@/lib/api";
-import { formatDate, formatEnumValue, formatMoney, getStatusBadgeVariant } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import {
+  formatDate,
+  formatEnumValue,
+  formatMoney,
+  getDirectionVariant,
+  getEntryTypeVariant,
+  getStatusBadgeVariant
+} from "@/lib/utils";
+import { usePersistedTabs } from "@/lib/use-persisted-tabs";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { FileText, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+// The ledger's EntryTypeEnum — used to populate the transaction-history entry-type filter.
+const ENTRY_TYPE_OPTIONS = [
+  { value: "", label: "All types" },
+  { value: "COLLECTION", label: "Collection" },
+  { value: "DISBURSEMENT", label: "Disbursement" },
+  { value: "TOPUP", label: "Topup" },
+  { value: "TRANSFER", label: "Transfer" },
+  { value: "INTER_VA_TRANSFER", label: "Inter-VA Transfer" },
+  { value: "SETTLEMENT", label: "Settlement" },
+  { value: "FEE", label: "Fee" },
+  { value: "REVERSAL", label: "Reversal" },
+  { value: "ADJUSTMENT", label: "Adjustment" },
+  { value: "TREASURY_PREFUND", label: "Treasury Prefund" },
+  { value: "TREASURY_SWEEP", label: "Treasury Sweep" },
+  { value: "TREASURY_TRANSFER", label: "Treasury Transfer" }
+] as const;
+
+const DIRECTION_OPTIONS = [
+  { value: "", label: "All directions" },
+  { value: "DEBIT", label: "Debit" },
+  { value: "CREDIT", label: "Credit" }
+] as const;
 
 const PER_PAGE = 20;
 
@@ -432,6 +469,314 @@ function LedgerTransactionsTab({ filters }: { filters: LedgerTransactionFilters 
 }
 
 // ---------------------------------------------------------------------------
+// Account Transaction History Tab (cursor-paginated, per virtual account)
+// ---------------------------------------------------------------------------
+
+// The signed change this line applied to the account's *available* balance, per the ledger's own
+// rule: a line moves the balance up when its direction matches the account's normal side, down
+// otherwise (see BalanceProjectionService.signedDelta in ss-ledger-service).
+function signedAvailableDelta(
+  direction: string | null,
+  normalBalance: string | null,
+  amount: number | null
+): number | null {
+  if (amount === null || amount === undefined || !direction || !normalBalance) return null;
+  const d = direction.toUpperCase();
+  const n = normalBalance.toUpperCase();
+  const increases = (n === "DEBIT" && d === "DEBIT") || (n === "CREDIT" && d === "CREDIT");
+  return increases ? amount : -amount;
+}
+
+// runningBalance is the available balance *after* this line; the balance *before* is that minus the
+// line's signed effect. Requires the account's normal balance to know the sign.
+function balanceBeforeOf(
+  tx: LedgerTransactionHistoryRecord,
+  normalBalance: string | null
+): number | null {
+  if (tx.runningBalance === null || tx.runningBalance === undefined) return null;
+  const delta = signedAvailableDelta(tx.direction, normalBalance, tx.amount);
+  if (delta === null) return null;
+  return tx.runningBalance - delta;
+}
+
+type LedgerHistoryFilters = {
+  transactionRef: string;
+  entryType: string;
+  direction: string;
+  from: string;
+  to: string;
+};
+
+const INITIAL_HISTORY_FILTERS: LedgerHistoryFilters = {
+  transactionRef: "",
+  entryType: "",
+  direction: "",
+  from: "",
+  to: ""
+};
+
+const HISTORY_COLUMNS = (
+  <TR>
+    <TH>Posted</TH>
+    <TH>Entry Type</TH>
+    <TH>Entry Line Type</TH>
+    <TH>Direction</TH>
+    <TH>Amount</TH>
+    <TH>Running Balance</TH>
+    <TH>Balance Before</TH>
+    <TH>Transaction Reference</TH>
+  </TR>
+);
+
+/**
+ * The correct per-VA ledger history view: reads from the ledger's cursor-paginated
+ * `/accounts/{id}/transaction-history` endpoint. Pages are walked forward/back via opaque cursors
+ * (the endpoint has no offset/total), so we keep a stack of the cursors that opened each page.
+ * Supports the full filter set the endpoint exposes (ref / entry type / direction / date range) and
+ * a row click navigates to the transaction detail page.
+ */
+function AccountLedgerHistoryTab({ accountId }: { accountId: string }) {
+  const { token } = useSession();
+  const navigate = useNavigate();
+  const [draft, setDraft] = useState<LedgerHistoryFilters>(INITIAL_HISTORY_FILTERS);
+  const [applied, setApplied] = useState<LedgerHistoryFilters>(INITIAL_HISTORY_FILTERS);
+  // Cursors for pages *after* the first. The current page's cursor is the top of the stack
+  // (undefined when the stack is empty → first page).
+  const [cursorStack, setCursorStack] = useState<string[]>([]);
+
+  // Any filter change (or account change) invalidates the cursor walk — restart from page one.
+  useEffect(() => {
+    setCursorStack([]);
+  }, [accountId, applied]);
+
+  const cursor = cursorStack.length > 0 ? cursorStack[cursorStack.length - 1] : undefined;
+
+  // The account's normal balance lets us derive "balance before" from the running (after) balance.
+  // Shares react-query's cache with the overview tab's ledger-account fetch.
+  const accountQuery = useQuery({
+    queryKey: ["ledger-account", accountId],
+    queryFn: () => getLedgerAccount(token!, accountId),
+    retry: false
+  });
+  const normalBalance = accountQuery.data?.normalBalance ?? null;
+
+  const query = useQuery({
+    queryKey: ["account-history", accountId, { ...applied, cursor }],
+    queryFn: () =>
+      getAccountTransactionHistory(token!, accountId, {
+        cursor,
+        size: PER_PAGE,
+        transactionRef: applied.transactionRef || undefined,
+        entryType: applied.entryType || undefined,
+        direction: applied.direction || undefined,
+        from: toISOFrom(applied.from),
+        to: toISOTo(applied.to)
+      }),
+    retry: false,
+    placeholderData: keepPreviousData
+  });
+
+  const records = query.data?.items ?? [];
+  const hasPrevious = cursorStack.length > 0;
+  const hasNext = Boolean(query.data?.hasMore && query.data?.nextCursor);
+  const is503 = isLedgerProxyUnavailable(query.error);
+
+  function applyFilters() {
+    setApplied(draft);
+  }
+
+  function clearFilters() {
+    setDraft(INITIAL_HISTORY_FILTERS);
+    setApplied(INITIAL_HISTORY_FILTERS);
+  }
+
+  function goNext() {
+    const next = query.data?.nextCursor;
+    if (next) setCursorStack(stack => [...stack, next]);
+  }
+
+  function goPrevious() {
+    setCursorStack(stack => stack.slice(0, -1));
+  }
+
+  function openTransaction(tx: LedgerTransactionHistoryRecord) {
+    if (tx.transactionRef) {
+      navigate(`/transactions/${encodeURIComponent(tx.transactionRef)}`);
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Filter bar — every parameter the transaction-history endpoint accepts. */}
+      <div className="border-b border-border bg-muted/30 px-6 py-3 md:px-8">
+        <div className="flex flex-wrap gap-2">
+          <Input
+            className="w-full md:max-w-xs"
+            value={draft.transactionRef}
+            onChange={e => setDraft(d => ({ ...d, transactionRef: e.target.value }))}
+            placeholder="Transaction reference"
+            onKeyDown={e => e.key === "Enter" && applyFilters()}
+          />
+          <Select
+            value={draft.entryType}
+            onChange={v => setDraft(d => ({ ...d, entryType: v }))}
+            options={ENTRY_TYPE_OPTIONS}
+            className="w-44"
+            searchable
+            searchPlaceholder="Search types…"
+          />
+          <Select
+            value={draft.direction}
+            onChange={v => setDraft(d => ({ ...d, direction: v }))}
+            options={DIRECTION_OPTIONS}
+            className="w-36"
+          />
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">From</span>
+            <Input
+              type="date"
+              className="w-36"
+              value={draft.from}
+              onChange={e => setDraft(d => ({ ...d, from: e.target.value }))}
+            />
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground">To</span>
+            <Input
+              type="date"
+              className="w-36"
+              value={draft.to}
+              onChange={e => setDraft(d => ({ ...d, to: e.target.value }))}
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={applyFilters}>
+            Apply
+          </Button>
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            Clear
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
+        {query.isLoading ? (
+          <TableContainer className="border-y border-border bg-card">
+            <Table>
+              <THead>{HISTORY_COLUMNS}</THead>
+              <TBody>
+                <TableLoadingRows columns={8} rows={6} />
+              </TBody>
+            </Table>
+          </TableContainer>
+        ) : query.error ? (
+          <StatePanel
+            title={is503 ? "Ledger proxy degraded" : "Failed to load transaction history"}
+            description={
+              is503
+                ? "The ledger service is currently unavailable. Chaos-machine history is still accessible on the other tab."
+                : getErrorMessage(query.error)
+            }
+            tone={is503 ? "warning" : "danger"}
+            icon={is503 ? "access" : "error"}
+            action={
+              !is503 ? <Button onClick={() => void query.refetch()}>Retry</Button> : undefined
+            }
+          />
+        ) : records.length === 0 ? (
+          <StatePanel
+            title="No transaction history"
+            description="This account has no ledger movements for the current filters."
+            iconNode={<Wallet className="h-5 w-5" />}
+          />
+        ) : (
+          <TableContainer className="border-y border-border bg-card">
+            <Table>
+              <THead>{HISTORY_COLUMNS}</THead>
+              <TBody>
+                {records.map(tx => {
+                  const balanceBefore = balanceBeforeOf(tx, normalBalance);
+                  return (
+                    <TR
+                      key={tx.lineId}
+                      role="button"
+                      tabIndex={0}
+                      className="cursor-pointer transition-colors hover:bg-muted/40 focus:bg-muted/40 focus:outline-none"
+                      onClick={() => openTransaction(tx)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openTransaction(tx);
+                        }
+                      }}
+                    >
+                      <TD>{tx.postedAt ? formatDate(tx.postedAt) : "—"}</TD>
+                      <TD>
+                        {tx.entryType ? (
+                          <Badge variant={getEntryTypeVariant(tx.entryType)}>
+                            {formatEnumValue(tx.entryType)}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TD>
+                      <TD>
+                        {tx.entryLineType ? (
+                          <Badge variant={getEntryTypeVariant(tx.entryLineType)}>
+                            {formatEnumValue(tx.entryLineType)}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TD>
+                      <TD>
+                        {tx.direction ? (
+                          <Badge variant={getDirectionVariant(tx.direction)}>
+                            {formatEnumValue(tx.direction)}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TD>
+                      <TD className="tabular-nums">
+                        {tx.amount !== null && tx.amount !== undefined
+                          ? formatMoney(tx.amount, tx.currency ?? "GHS")
+                          : "—"}
+                      </TD>
+                      <TD className="tabular-nums">
+                        {tx.runningBalance !== null && tx.runningBalance !== undefined
+                          ? formatMoney(tx.runningBalance, tx.currency ?? "GHS")
+                          : "—"}
+                      </TD>
+                      <TD className="tabular-nums text-muted-foreground">
+                        {balanceBefore !== null
+                          ? formatMoney(balanceBefore, tx.currency ?? "GHS")
+                          : "—"}
+                      </TD>
+                      <TD className="max-w-[12rem] truncate font-mono text-muted-foreground">
+                        {tx.transactionRef ?? "—"}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </TableContainer>
+        )}
+
+        <CursorPagination
+          hasPrevious={hasPrevious}
+          hasNext={hasNext}
+          label={records.length > 0 ? `${records.length} on this page` : ""}
+          disabled={query.isFetching}
+          onPrevious={goPrevious}
+          onNext={goNext}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Shared filter state (used by standalone page + per-VA tab)
 // ---------------------------------------------------------------------------
 
@@ -468,6 +813,12 @@ function toISOTo(dateStr: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 export function TransactionsTab({ lockedVaId }: { lockedVaId?: string }) {
+  // On a virtual account detail page we show only the ledger's per-account transaction history.
+  // (The chaos-machine vs ledger tab separation is deferred.)
+  if (lockedVaId) {
+    return <AccountLedgerHistoryTab accountId={lockedVaId} />;
+  }
+
   const [draft, setDraft] = useState<TransactionFilters>({
     ...INITIAL,
     vaId: lockedVaId ?? ""
@@ -476,6 +827,8 @@ export function TransactionsTab({ lockedVaId }: { lockedVaId?: string }) {
     ...INITIAL,
     vaId: lockedVaId ?? ""
   });
+
+  const [sourceTab, setSourceTab] = usePersistedTabs("tab", "sent");
 
   function applyFilters() {
     setApplied(draft);
@@ -568,7 +921,12 @@ export function TransactionsTab({ lockedVaId }: { lockedVaId?: string }) {
       </div>
 
       {/* Source tabs */}
-      <Tabs defaultValue="sent" className="flex min-h-0 flex-1 flex-col">
+      <Tabs
+        value={sourceTab}
+        defaultValue="sent"
+        onValueChange={setSourceTab}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         <TabsList>
           <TabsTrigger value="sent">Sent (Chaos History)</TabsTrigger>
           <TabsTrigger value="ledger">Ledger</TabsTrigger>

@@ -26,6 +26,11 @@ const TransactionsPage = lazy(() =>
     default: m.TransactionsPage
   }))
 );
+const TransactionDetailPage = lazy(() =>
+  import("@/features/transactions/transaction-detail-page").then(m => ({
+    default: m.TransactionDetailPage
+  }))
+);
 const SingleFlowPage = lazy(() =>
   import("@/features/chaos/single-flow-page").then(m => ({ default: m.SingleFlowPage }))
 );
@@ -151,6 +156,10 @@ export const router = createBrowserRouter([
           {
             path: "/transactions",
             element: withSuspense(<TransactionsPage />)
+          },
+          {
+            path: "/transactions/:ref",
+            element: withSuspense(<TransactionDetailPage />)
           }
         ]
       }
