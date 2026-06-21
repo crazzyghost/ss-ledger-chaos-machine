@@ -1,13 +1,10 @@
 package com.softspark.chaos.account.bootstrap;
 
 import com.softspark.chaos.account.enumeration.AccountCategory;
-import com.softspark.chaos.account.enumeration.AccountOwnershipType;
-import com.softspark.chaos.account.enumeration.AccountStatus;
-import com.softspark.chaos.account.enumeration.CreatedVia;
+import com.softspark.chaos.account.enumeration.AccountRole;
 import com.softspark.chaos.account.enumeration.ProvisioningStatus;
 import com.softspark.chaos.account.model.AccountRoleEntity;
 import com.softspark.chaos.account.model.FlowSlotConfig;
-import com.softspark.chaos.account.model.VirtualAccount;
 import com.softspark.chaos.account.repository.AccountRoleRepository;
 import com.softspark.chaos.account.repository.FlowSlotConfigRepository;
 import com.softspark.chaos.account.repository.VirtualAccountRepository;
@@ -29,25 +26,32 @@ import org.springframework.stereotype.Component;
 /**
  * Application runner that seeds and provisions the chart of accounts on startup.
  *
- * <p>Phase 025 bootstrapping proceeds in four stages:
+ * <p>Phase 009 inverts account ownership: <b>the ledger owns virtual accounts</b>. The bootstrap no
+ * longer persists VAs — it only <em>requests</em> their creation over HTTP and lets the {@code
+ * ledger.account.created} consumer materialize the {@code virtual_account} rows. Bootstrapping
+ * proceeds in four stages:
  *
  * <ol>
  *   <li><b>Validate</b> — the YAML catalog is validated and sorted into topological order (parents
  *       before children) by {@link SystemAccountCatalogValidator}.
  *   <li><b>Seed</b> — for every role in the catalog, an {@code account_role} row is created with
  *       {@link ProvisioningStatus#PENDING} if one does not already exist.
- *   <li><b>Provision</b> (when {@code chaos.bootstrap.provision-on-startup=true}) — each
- *       PENDING/FAILED role is provisioned via {@link LedgerAccountProvisioningClient}; on success
- *       the row is updated to {@link ProvisioningStatus#PROVISIONED} and a
- *       {@link VirtualAccount} is recorded locally.
+ *   <li><b>Request</b> (when {@code chaos.bootstrap.provision-on-startup=true}) — for each role
+ *       whose {@code account_code} is not already present in {@code virtual_account}, a {@code POST
+ *       /api/v0/accounts} request is issued to the ledger via
+ *       {@link LedgerAccountProvisioningClient}. The role row is left {@link
+ *       ProvisioningStatus#PENDING}; it flips to {@link ProvisioningStatus#PROVISIONED} only when
+ *       the consumer projects the resulting event. No {@code virtual_account} row is written here.
  *   <li><b>Flow slots</b> — {@code flow_slot_config} rows are upserted from the YAML
  *       {@code flow-slots} list.
  * </ol>
  *
- * <p>Roles that cannot be provisioned at startup are retried by {@link BootstrapReconciler}.
+ * <p>The stage never blocks waiting for a VA to materialize, so startup completes promptly even if
+ * the event has not yet arrived. Roles still {@code PENDING}/{@code FAILED} are retried by
+ * {@link BootstrapReconciler}.
  *
- * <p>This runner supersedes the Phase 002 {@link ChartOfAccountsBootstrap} which has been
- * disabled.
+ * <p>This runner supersedes the Phase 002 {@link ChartOfAccountsBootstrap} (disabled) and the
+ * synchronous-persist behavior of Phase 007.
  */
 @Component
 @Order(Ordered.LOWEST_PRECEDENCE)
@@ -103,9 +107,10 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
     orderedDefs.forEach(this::seedRoleIfAbsent);
 
     if (props.provisionOnStartup()) {
-      runProvisioning(orderedDefs);
+      // Startup has no caller — use the configured service token.
+      runRequests(orderedDefs, null);
     } else {
-      log.info("provision-on-startup=false — skipping HTTP provisioning (roles seeded as PENDING)");
+      log.info("provision-on-startup=false — skipping HTTP requests (roles seeded as PENDING)");
     }
 
     bootstrapFlowSlots(props.flowSlots());
@@ -123,8 +128,23 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
    * @return a {@link BootstrapResult} summarising the current provisioning state
    */
   public BootstrapResult triggerManualBootstrap() {
+    return triggerManualBootstrap(null);
+  }
+
+  /**
+   * Manually triggers provisioning, forwarding the acting user's bearer token to the ledger.
+   *
+   * <p>Used by the UI-driven {@code POST /chart-of-accounts/bootstrap} endpoint so ledger calls are
+   * authorized as the logged-in user rather than with the static service token. A {@code null} token
+   * falls back to the configured service token (the reconciler path).
+   *
+   * @param callerToken the acting user's bearer token, or {@code null} to use the service token
+   * @return a {@link BootstrapResult} summarising the current provisioning state
+   */
+  public BootstrapResult triggerManualBootstrap(String callerToken) {
     var orderedDefs = catalogValidator.validateAndOrder(props.systemAccounts());
-    var errors = runProvisioning(orderedDefs);
+    orderedDefs.forEach(this::seedRoleIfAbsent);
+    var errors = runRequests(orderedDefs, callerToken);
 
     long provisioned =
         accountRoleRepository.countByProvisioningStatus(ProvisioningStatus.PROVISIONED);
@@ -139,42 +159,98 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
   // -------------------------------------------------------------------------
 
   /**
-   * Provisions all non-PROVISIONED roles in topological order, tracking parent VA IDs for child
-   * requests. Returns the list of per-role error messages encountered.
+   * Requests creation of every role whose {@code account_code} is not already a VA, in topological
+   * order. HTTP-only and non-blocking: no {@code virtual_account} row is written here — the role is
+   * left {@link ProvisioningStatus#PENDING} until the consumer projects the ledger event. Returns
+   * the list of per-role error messages encountered.
    */
-  private List<String> runProvisioning(List<SystemAccountDefinition> orderedDefs) {
-    Map<com.softspark.chaos.account.enumeration.AccountRole, String> roleToVaId = new HashMap<>();
+  private List<String> runRequests(List<SystemAccountDefinition> orderedDefs, String callerToken) {
+    Map<AccountRole, String> roleToAccountId = new HashMap<>();
     List<String> errors = new ArrayList<>();
 
-    // Pre-populate map with already-provisioned roles so children can find their parent IDs.
     for (var def : orderedDefs) {
-      accountRoleRepository
-          .findById(def.role())
-          .filter(e -> e.getProvisioningStatus() == ProvisioningStatus.PROVISIONED)
-          .ifPresent(e -> roleToVaId.put(def.role(), e.getDefaultVaId()));
-    }
-
-    for (var def : orderedDefs) {
-      if (roleToVaId.containsKey(def.role())) {
-        continue; // already provisioned
+      // Already materialized? The consumer owns VA creation; just ensure the role is linked.
+      var existingVa = virtualAccountRepository.findByAccountCode(def.accountCode()).orElse(null);
+      if (existingVa != null) {
+        roleToAccountId.put(def.role(), existingVa.getVaId());
+        linkRoleToExistingVa(def, existingVa.getVaId());
+        log.debug(
+            "Code {} already a VA — skipping request for role {}", def.accountCode(), def.role());
+        continue;
       }
 
-      String parentAccountId = def.parentRole() != null ? roleToVaId.get(def.parentRole()) : null;
+      // Resolve the parent's ledger account id; defer the child if it cannot be resolved yet.
+      String parentAccountId = null;
+      if (def.parentRole() != null) {
+        parentAccountId = resolveParentAccountId(def, roleToAccountId, callerToken);
+        if (parentAccountId == null) {
+          log.info(
+              "Deferring role {} — parent {} not yet resolvable; reconcile will retry",
+              def.role(),
+              def.parentRole());
+          continue;
+        }
+      }
 
       try {
-        String accountId = ledgerClient.createAccount(def, parentAccountId);
-        persistProvisioned(def, accountId);
-        roleToVaId.put(def.role(), accountId);
-        log.info("Provisioned role {} → accountId {}", def.role(), accountId);
-      } catch (LedgerProvisioningException e) {
+        String accountId = ledgerClient.createAccount(def, parentAccountId, callerToken);
+        upsertRolePending(def);
+        roleToAccountId.put(def.role(), accountId);
+        log.info(
+            "Requested ledger account for role {} (accountId {}); role left PENDING until"
+                + " projected",
+            def.role(),
+            accountId);
+      } catch (RuntimeException e) {
+        // Never let a single role's failure abort startup — record it and move on; the reconciler
+        // retries. Ledger errors (403/5xx/transport) and any unexpected error are handled here.
         persistFailure(def, e.getMessage());
         String error = def.role() + ": " + e.getMessage();
         errors.add(error);
-        log.warn("Failed to provision role {}: {}", def.role(), e.getMessage());
+        log.warn("Failed to request account for role {}: {}", def.role(), e.getMessage());
       }
     }
 
     return errors;
+  }
+
+  /**
+   * Resolves a child's parent ledger account id from (in order): account ids requested earlier in
+   * this run, the VA projection by parent code, then a ledger code lookup. Returns {@code null} when
+   * the parent has not been created yet.
+   */
+  private String resolveParentAccountId(
+      SystemAccountDefinition def, Map<AccountRole, String> roleToAccountId, String callerToken) {
+    String fromRun = roleToAccountId.get(def.parentRole());
+    if (fromRun != null) {
+      return fromRun;
+    }
+
+    String parentCode =
+        accountRoleRepository
+            .findById(def.parentRole())
+            .map(AccountRoleEntity::getAccountCode)
+            .orElse(null);
+    if (parentCode == null) {
+      return null;
+    }
+
+    var parentVa = virtualAccountRepository.findByAccountCode(parentCode).orElse(null);
+    if (parentVa != null) {
+      return parentVa.getVaId();
+    }
+
+    // Last resort: ask the ledger. A failure here must not crash the bootstrap — defer the child.
+    try {
+      return ledgerClient.findAccountByCode(parentCode, callerToken).orElse(null);
+    } catch (LedgerProvisioningException e) {
+      log.warn(
+          "Parent code lookup for {} failed ({}); deferring child {}",
+          parentCode,
+          e.getMessage(),
+          def.role());
+      return null;
+    }
   }
 
   private void seedRoleIfAbsent(SystemAccountDefinition def) {
@@ -195,41 +271,55 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
     log.debug("Seeded PENDING account_role row for role: {}", def.role());
   }
 
-  private void persistProvisioned(SystemAccountDefinition def, String accountId) {
+  /**
+   * Upserts the role row as {@link ProvisioningStatus#PENDING} after a successful HTTP request,
+   * clearing any prior error. The status is intentionally <em>not</em> set to PROVISIONED — that
+   * transition is owned by the consumer when it projects the {@code ledger.account.created} event.
+   * An already-PROVISIONED role is left untouched.
+   */
+  private void upsertRolePending(SystemAccountDefinition def) {
     var entity = accountRoleRepository.findById(def.role()).orElseGet(AccountRoleEntity::new);
+
+    if (entity.getProvisioningStatus() == ProvisioningStatus.PROVISIONED) {
+      return;
+    }
 
     entity.setRole(def.role());
     entity.setAccountCode(def.accountCode());
     entity.setCategory(AccountCategory.valueOf(def.accountCategory()));
     entity.setCurrency(def.currency());
-    entity.setDefaultVaId(accountId);
-    entity.setProvisioningStatus(ProvisioningStatus.PROVISIONED);
-    entity.setProvisionedAt(Instant.now().toString());
+    entity.setProvisioningStatus(ProvisioningStatus.PENDING);
     entity.setLastError(null);
 
     accountRoleRepository.save(entity);
+  }
 
-    if (!virtualAccountRepository.existsById(accountId)) {
-      var va = new VirtualAccount();
-      va.setVaId(accountId);
-      va.setName(def.accountName());
-      va.setOwnershipType(AccountOwnershipType.valueOf(def.ownershipType()));
-      va.setOrganizationId(null);
-      va.setCurrency(def.currency());
-      va.setStatus(AccountStatus.ACTIVE);
-      va.setChannel(null);
-      va.setAccountRole(def.role());
-      va.setCreatedVia(CreatedVia.LEDGER_PROVISIONED);
-      virtualAccountRepository.save(va);
-      log.debug("Recorded SYSTEM virtual account {} for role {}", accountId, def.role());
-    }
+  /**
+   * Links a role to a VA that already exists in the projection but whose role was not yet flipped to
+   * PROVISIONED (the event-before-seed race). No-op when the role is already PROVISIONED.
+   */
+  private void linkRoleToExistingVa(SystemAccountDefinition def, String accountId) {
+    accountRoleRepository
+        .findById(def.role())
+        .filter(e -> e.getProvisioningStatus() != ProvisioningStatus.PROVISIONED)
+        .ifPresent(
+            entity -> {
+              entity.setDefaultVaId(accountId);
+              entity.setProvisioningStatus(ProvisioningStatus.PROVISIONED);
+              entity.setProvisionedAt(Instant.now().toString());
+              entity.setLastError(null);
+              accountRoleRepository.save(entity);
+              log.info("Reconciled role {} to existing VA {}", def.role(), accountId);
+            });
   }
 
   private void persistFailure(SystemAccountDefinition def, String errorMessage) {
     accountRoleRepository
         .findById(def.role())
+        .filter(e -> e.getProvisioningStatus() != ProvisioningStatus.PROVISIONED)
         .ifPresent(
             entity -> {
+              entity.setProvisioningStatus(ProvisioningStatus.FAILED);
               entity.setLastError(truncate(errorMessage, 500));
               accountRoleRepository.save(entity);
             });

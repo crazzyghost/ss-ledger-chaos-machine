@@ -148,7 +148,7 @@ public class LedgerClient {
         () ->
             restClient
                 .get()
-                .uri("/api/v0/accounts/{id}/balances", accountId)
+                .uri("/api/v0/accounts/{id}/balance", accountId)
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .onStatus(

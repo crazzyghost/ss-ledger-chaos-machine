@@ -3,6 +3,7 @@ package com.softspark.chaos.account.repository;
 import com.softspark.chaos.account.enumeration.AccountOwnershipType;
 import com.softspark.chaos.account.enumeration.AccountStatus;
 import com.softspark.chaos.account.model.VirtualAccount;
+import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -63,4 +64,23 @@ public interface VirtualAccountRepository extends JpaRepository<VirtualAccount, 
       "SELECT v FROM VirtualAccount v WHERE LOWER(v.name) LIKE LOWER(CONCAT('%', :searchTerm, '%'))"
           + " OR LOWER(v.vaId) LIKE LOWER(CONCAT('%', :searchTerm, '%'))")
   Page<VirtualAccount> searchByNameOrId(@Param("searchTerm") String searchTerm, Pageable pageable);
+
+  /**
+   * Finds a virtual account by its ledger {@code account_code}.
+   *
+   * <p>Used by the chart-of-accounts bootstrap to decide whether a SYSTEM account code has already
+   * been materialized as a VA (and so should not be re-requested from the ledger).
+   *
+   * @param accountCode the ledger account code
+   * @return the matching virtual account, if present
+   */
+  Optional<VirtualAccount> findByAccountCode(String accountCode);
+
+  /**
+   * Returns whether a virtual account with the given ledger {@code account_code} exists.
+   *
+   * @param accountCode the ledger account code
+   * @return {@code true} if a VA with the code is present
+   */
+  boolean existsByAccountCode(String accountCode);
 }

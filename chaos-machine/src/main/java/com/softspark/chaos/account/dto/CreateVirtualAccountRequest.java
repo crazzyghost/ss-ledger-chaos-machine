@@ -1,26 +1,34 @@
 package com.softspark.chaos.account.dto;
 
+import com.softspark.chaos.account.enumeration.AccountCategory;
 import com.softspark.chaos.account.enumeration.AccountOwnershipType;
-import com.softspark.chaos.account.enumeration.AccountStatus;
-import com.softspark.chaos.account.enumeration.Channel;
 import com.softspark.chaos.base.validation.ISO4217;
 import com.softspark.chaos.base.validation.IsInEnum;
 import io.soabase.recordbuilder.core.RecordBuilder;
+import jakarta.annotation.Nullable;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
+import java.math.BigDecimal;
 
 /**
- * Request record for creating a virtual account.
+ * Request record for requesting creation of a virtual account.
  *
- * @param name             the virtual account name
- * @param ownershipType    the ownership type (SYSTEM or ORGANIZATION)
- * @param currency         the currency code (ISO-4217)
- * @param organizationId   optional organization ID (required for ORGANIZATION ownership)
- * @param organizationName optional organization name (for create-or-link)
- * @param channel          optional channel
- * @param status           optional status (defaults to ACTIVE)
- * @param vaId             optional VA ID (ULID generated if not provided)
- * @param announce         whether to announce the VA creation to Kafka (defaults to false)
+ * <p>Phase 009: the chaos machine no longer inserts VAs locally. This request is mapped to the
+ * ledger's {@code POST /api/v0/accounts} contract and forwarded; the VA materializes in the
+ * registry only when the resulting {@code ledger.account.created} event is consumed. SYSTEM
+ * accounts require an {@code accountCode} and {@code accountCategory}; ORGANIZATION accounts require
+ * an {@code organizationId} and may be requested with any ACTIVE currency.
+ *
+ * @param name            the account display name
+ * @param ownershipType   the ownership type (SYSTEM or ORGANIZATION)
+ * @param currency        the currency code (ISO-4217); validated ACTIVE against the currency table
+ * @param organizationId  the owning organization id (required for ORGANIZATION ownership)
+ * @param accountCode      hierarchical account code (required for SYSTEM)
+ * @param accountCategory  account category (required for SYSTEM; defaults to LIABILITY for ORG)
+ * @param parentAccountId  optional ledger parent account id
+ * @param overdraftLimit   optional non-negative overdraft limit
+ * @param minimumBalance   optional non-negative minimum balance floor
  */
 @RecordBuilder
 public record CreateVirtualAccountRequest(
@@ -29,9 +37,10 @@ public record CreateVirtualAccountRequest(
         @IsInEnum(enumClass = AccountOwnershipType.class, message = "Invalid ownership type")
         String ownershipType,
     @NotBlank(message = "Currency is required") @ISO4217 String currency,
-    String organizationId,
-    String organizationName,
-    @IsInEnum(enumClass = Channel.class, message = "Invalid channel") String channel,
-    @IsInEnum(enumClass = AccountStatus.class, message = "Invalid status") String status,
-    String vaId,
-    Boolean announce) {}
+    @Nullable String organizationId,
+    @Nullable String accountCode,
+    @Nullable @IsInEnum(enumClass = AccountCategory.class, message = "Invalid account category")
+        String accountCategory,
+    @Nullable String parentAccountId,
+    @Nullable @PositiveOrZero BigDecimal overdraftLimit,
+    @Nullable @PositiveOrZero BigDecimal minimumBalance) {}

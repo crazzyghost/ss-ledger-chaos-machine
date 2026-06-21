@@ -27,6 +27,7 @@ public class TopicCatalog {
   private String organizationVaSettlementFailed = "organization.va.settlement.failed";
   private String collectionCompleted = "collection.completed";
   private String disbursementCompleted = "disbursement.completed";
+  private String ledgerAccountCreated = "ledger.account.created";
 
   public String getOrganizationOnboarded() {
     return organizationOnboarded;
@@ -133,6 +134,24 @@ public class TopicCatalog {
    */
   public void setDisbursementCompleted(String disbursementCompleted) {
     this.disbursementCompleted = disbursementCompleted;
+  }
+
+  /**
+   * Returns the topic the chaos machine consumes for ledger account-created events.
+   *
+   * @return the {@code ledger.account.created} topic name
+   */
+  public String getLedgerAccountCreated() {
+    return ledgerAccountCreated;
+  }
+
+  /**
+   * Sets the topic the chaos machine consumes for ledger account-created events.
+   *
+   * @param ledgerAccountCreated the topic name
+   */
+  public void setLedgerAccountCreated(String ledgerAccountCreated) {
+    this.ledgerAccountCreated = ledgerAccountCreated;
   }
 
   /**

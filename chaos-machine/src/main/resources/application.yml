@@ -61,6 +61,14 @@ chaos:
   default-tenant-id: ${CHAOS_DEFAULT_TENANT_ID:org_system}
   kafka:
     cluster-label: ${CHAOS_TARGET_LABEL:local}
+    consumer:
+      enabled: ${CHAOS_KAFKA_CONSUMER_ENABLED:true}
+      group-id: ${KAFKA_CONSUMER_GROUP:chaos-machine}
+      concurrency: ${CHAOS_KAFKA_CONSUMER_CONCURRENCY:1}
+      auto-offset-reset: ${CHAOS_KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
+      max-attempts: ${CHAOS_KAFKA_CONSUMER_MAX_ATTEMPTS:3}
+      backoff-initial-ms: ${CHAOS_KAFKA_CONSUMER_BACKOFF_INITIAL_MS:1000}
+      backoff-multiplier: ${CHAOS_KAFKA_CONSUMER_BACKOFF_MULTIPLIER:2.0}
   history:
     queue-capacity: ${CHAOS_HISTORY_QUEUE_CAPACITY:10000}
     retention-days: ${CHAOS_HISTORY_RETENTION_DAYS:30}
@@ -87,6 +95,7 @@ chaos:
     organization-va-settlement-failed: organization.va.settlement.failed
     collection-completed: collection.completed
     disbursement-completed: disbursement.completed
+    ledger-account-created: ${CHAOS_LEDGER_ACCOUNT_CREATED_TOPIC:ledger.account.created}
   bootstrap:
     reconcile-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_DELAY_MS:60000}
     reconcile-initial-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_INITIAL_DELAY_MS:30000}

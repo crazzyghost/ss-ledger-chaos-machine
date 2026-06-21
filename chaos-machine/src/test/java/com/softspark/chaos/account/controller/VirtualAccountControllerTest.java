@@ -1,8 +1,6 @@
 package com.softspark.chaos.account.controller;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -11,15 +9,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.softspark.chaos.account.dto.CreateVirtualAccountRequest;
+import com.softspark.chaos.account.dto.VirtualAccountRequestAccepted;
 import com.softspark.chaos.account.dto.VirtualAccountResponse;
 import com.softspark.chaos.account.enumeration.AccountOwnershipType;
 import com.softspark.chaos.account.enumeration.AccountStatus;
 import com.softspark.chaos.account.enumeration.CreatedVia;
-import com.softspark.chaos.account.service.VirtualAccountAnnouncer;
 import com.softspark.chaos.account.service.VirtualAccountService;
 import com.softspark.chaos.advice.GlobalExceptionHandler;
 import com.softspark.chaos.base.PageResponse;
 import com.softspark.chaos.config.SecurityConfiguration;
+import com.softspark.chaos.exception.BadRequestException;
 import com.softspark.chaos.exception.NotFoundException;
 import java.time.Instant;
 import java.util.List;
@@ -35,7 +34,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * WebMvc slice tests for {@link VirtualAccountController}.
+ * WebMvc slice tests for {@link VirtualAccountController} (Phase 009 async create).
  */
 @WebMvcTest(VirtualAccountController.class)
 @Import({GlobalExceptionHandler.class, SecurityConfiguration.class})
@@ -46,7 +45,6 @@ class VirtualAccountControllerTest {
   private final ObjectMapper objectMapper = new ObjectMapper();
 
   @MockitoBean private VirtualAccountService virtualAccountService;
-  @MockitoBean private VirtualAccountAnnouncer virtualAccountAnnouncer;
 
   private VirtualAccountResponse sampleResponse() {
     return new VirtualAccountResponse(
@@ -58,7 +56,7 @@ class VirtualAccountControllerTest {
         AccountStatus.ACTIVE,
         null,
         null,
-        CreatedVia.API,
+        CreatedVia.KAFKA,
         Instant.now(),
         Instant.now());
   }
@@ -71,20 +69,24 @@ class VirtualAccountControllerTest {
 
     @Test
     @WithMockUser
-    @DisplayName("valid request returns 201")
-    void validRequestReturns201() throws Exception {
+    @DisplayName("valid request returns 202 Accepted")
+    void validRequestReturns202() throws Exception {
       var req =
           new CreateVirtualAccountRequest(
-              "Test Account", "ORGANIZATION", "GHS", "org-123", null, null, null, null, false);
-      when(virtualAccountService.createVirtualAccount(any())).thenReturn(sampleResponse());
+              "Test Account", "ORGANIZATION", "GHS", "org-123", null, null, null, null, null);
+      when(virtualAccountService.requestCreate(any(), any()))
+          .thenReturn(
+              new VirtualAccountRequestAccepted(
+                  "REQUESTED", "forwarded", null, "org-123", "GHS", "ORGANIZATION"));
 
       mockMvc
           .perform(
               post("/api/v0/virtual-accounts")
                   .contentType(MediaType.APPLICATION_JSON)
                   .content(objectMapper.writeValueAsString(req)))
-          .andExpect(status().isCreated())
-          .andExpect(jsonPath("$.vaId").value("VA-001"));
+          .andExpect(status().isAccepted())
+          .andExpect(jsonPath("$.status").value("REQUESTED"))
+          .andExpect(jsonPath("$.organizationId").value("org-123"));
     }
 
     @Test
@@ -93,7 +95,7 @@ class VirtualAccountControllerTest {
     void missingNameReturns400() throws Exception {
       var req =
           new CreateVirtualAccountRequest(
-              "", "ORGANIZATION", "GHS", "org-123", null, null, null, null, false);
+              "", "ORGANIZATION", "GHS", "org-123", null, null, null, null, null);
 
       mockMvc
           .perform(
@@ -107,11 +109,11 @@ class VirtualAccountControllerTest {
 
     @Test
     @WithMockUser
-    @DisplayName("invalid currency returns 400 with validation error")
+    @DisplayName("invalid currency format returns 400 with validation error")
     void invalidCurrencyReturns400() throws Exception {
       var req =
           new CreateVirtualAccountRequest(
-              "My VA", "ORGANIZATION", "NOTACCY", "org-123", null, null, null, null, false);
+              "My VA", "ORGANIZATION", "NOTACCY", "org-123", null, null, null, null, null);
 
       mockMvc
           .perform(
@@ -120,6 +122,24 @@ class VirtualAccountControllerTest {
                   .content(objectMapper.writeValueAsString(req)))
           .andExpect(status().isBadRequest())
           .andExpect(jsonPath("$.message").value("Validation failed"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("unknown currency from service returns 400")
+    void unknownCurrencyReturns400() throws Exception {
+      var req =
+          new CreateVirtualAccountRequest(
+              "My VA", "ORGANIZATION", "USD", "org-123", null, null, null, null, null);
+      when(virtualAccountService.requestCreate(any(), any()))
+          .thenThrow(new BadRequestException("Unknown currency: USD", null));
+
+      mockMvc
+          .perform(
+              post("/api/v0/virtual-accounts")
+                  .contentType(MediaType.APPLICATION_JSON)
+                  .content(objectMapper.writeValueAsString(req)))
+          .andExpect(status().isBadRequest());
     }
   }
 
@@ -176,24 +196,6 @@ class VirtualAccountControllerTest {
           .andExpect(jsonPath("$.items").isArray())
           .andExpect(jsonPath("$.items[0].vaId").value("VA-001"))
           .andExpect(jsonPath("$.total").value(1));
-    }
-  }
-
-  // ── POST /api/v0/virtual-accounts/{vaId}/publish ──────────────────────────
-
-  @Nested
-  @DisplayName("POST /api/v0/virtual-accounts/{vaId}/publish")
-  class PublishVirtualAccountTests {
-
-    @Test
-    @WithMockUser
-    @DisplayName("successful publish returns 204")
-    void successReturns204() throws Exception {
-      doNothing().when(virtualAccountAnnouncer).announceVirtualAccount(anyString());
-
-      mockMvc
-          .perform(post("/api/v0/virtual-accounts/VA-001/publish"))
-          .andExpect(status().isNoContent());
     }
   }
 }

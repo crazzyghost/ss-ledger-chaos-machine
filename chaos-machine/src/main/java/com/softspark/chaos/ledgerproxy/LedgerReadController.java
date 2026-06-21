@@ -98,8 +98,8 @@ public class LedgerReadController {
    * @param request the HTTP request
    * @return the balance DTO
    */
-  @GetMapping("/accounts/{id}/balances")
-  @Operation(summary = "Get account balances", description = "Proxy to a ledger account balance")
+  @GetMapping("/accounts/{id}/balance")
+  @Operation(summary = "Get account balance", description = "Proxy to a ledger account balance")
   public ResponseEntity<LedgerBalanceDto> getAccountBalance(
       @PathVariable String id, HttpServletRequest request) {
     var token = extractToken(request);

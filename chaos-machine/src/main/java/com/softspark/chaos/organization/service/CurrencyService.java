@@ -186,6 +186,37 @@ public class CurrencyService {
             });
   }
 
+  /**
+   * Validates that the given ISO-4217 code is usable for creating an account: it must reference an
+   * {@link CurrencyStatus#ACTIVE} currency in the reference table.
+   *
+   * <p>Soft dependency on Phase 010 reference data: when the {@code currency} table is empty (the
+   * seeder has not run) validation degrades to a no-op, leaving upstream {@code @ISO4217} format
+   * validation as the only guard. When the table is populated, an unknown code is rejected as a
+   * {@link BadRequestException} and an inactive code as a {@link ConflictException}.
+   *
+   * @param code the ISO-4217 code to validate (case-insensitive)
+   * @throws BadRequestException if the code is blank or unknown
+   * @throws ConflictException   if the currency exists but is not ACTIVE
+   */
+  @Transactional(readOnly = true)
+  public void assertUsable(String code) {
+    if (code == null || code.isBlank()) {
+      throw new BadRequestException("Currency is required", null);
+    }
+    if (currencyRepository.count() == 0) {
+      log.debug("Currency reference table empty — skipping currency validation for {}", code);
+      return;
+    }
+    var currency =
+        currencyRepository
+            .findByCode(code.toUpperCase())
+            .orElseThrow(() -> new BadRequestException("Unknown currency: " + code, null));
+    if (currency.getStatus() != CurrencyStatus.ACTIVE) {
+      throw new ConflictException("Currency is not active: " + code);
+    }
+  }
+
   private Currency findOrThrow(String currencyId) {
     return currencyRepository
         .findById(currencyId)

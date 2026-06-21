@@ -1,13 +1,15 @@
 package com.softspark.chaos.account.controller;
 
 import com.softspark.chaos.account.dto.CreateVirtualAccountRequest;
+import com.softspark.chaos.account.dto.VirtualAccountRequestAccepted;
 import com.softspark.chaos.account.dto.VirtualAccountResponse;
-import com.softspark.chaos.account.service.VirtualAccountAnnouncer;
 import com.softspark.chaos.account.service.VirtualAccountService;
+import com.softspark.chaos.auth.BearerToken;
 import com.softspark.chaos.base.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,8 +23,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * REST controller for virtual account operations.
- * <p>
- * Provides endpoints for creating and listing virtual accounts in the registry.
+ *
+ * <p>Phase 009: the ledger owns virtual accounts. Creation is asynchronous — {@code POST} forwards
+ * the request to the ledger and returns {@code 202 Accepted}; the VA appears in the list once the
+ * {@code ledger.account.created} event is consumed. List/Get read the projection.
  */
 @RestController
 @RequestMapping("/api/v0/virtual-accounts")
@@ -30,31 +34,30 @@ import org.springframework.web.bind.annotation.RestController;
 public class VirtualAccountController {
 
   private final VirtualAccountService virtualAccountService;
-  private final VirtualAccountAnnouncer virtualAccountAnnouncer;
 
-  public VirtualAccountController(
-      VirtualAccountService virtualAccountService,
-      VirtualAccountAnnouncer virtualAccountAnnouncer) {
+  public VirtualAccountController(VirtualAccountService virtualAccountService) {
     this.virtualAccountService = virtualAccountService;
-    this.virtualAccountAnnouncer = virtualAccountAnnouncer;
   }
 
   /**
-   * Creates a new virtual account.
+   * Requests creation of a virtual account from the ledger (asynchronous).
    *
    * @param request the creation request
-   * @return the created virtual account
+   * @return {@code 202 Accepted} echoing the forwarded request
    */
   @PostMapping
   @Operation(
-      summary = "Create a virtual account",
+      summary = "Request a virtual account",
       description =
-          "Creates a new virtual account, optionally linking to an organization and announcing via"
-              + " Kafka")
-  public ResponseEntity<VirtualAccountResponse> createVirtualAccount(
-      @Valid @RequestBody CreateVirtualAccountRequest request) {
-    var created = virtualAccountService.createVirtualAccount(request);
-    return ResponseEntity.status(HttpStatus.CREATED).body(created);
+          "Forwards a creation request to the ledger (POST /api/v0/accounts) and returns 202"
+              + " Accepted. The account is owned by the ledger and appears in GET"
+              + " /api/v0/virtual-accounts once the ledger.account.created event is consumed —"
+              + " poll the list for eventual consistency.")
+  public ResponseEntity<VirtualAccountRequestAccepted> createVirtualAccount(
+      @Valid @RequestBody CreateVirtualAccountRequest request, HttpServletRequest httpRequest) {
+    var accepted =
+        virtualAccountService.requestCreate(request, BearerToken.fromRequest(httpRequest));
+    return ResponseEntity.status(HttpStatus.ACCEPTED).body(accepted);
   }
 
   /**
@@ -108,20 +111,5 @@ public class VirtualAccountController {
         virtualAccountService.listVirtualAccounts(
             page, perPage, ownershipType, organizationId, currency, status, search);
     return ResponseEntity.ok(result);
-  }
-
-  /**
-   * Publishes (or re-publishes) a virtual account announcement to Kafka.
-   *
-   * @param vaId the virtual account ID to announce
-   * @return no content on success
-   */
-  @PostMapping("/{vaId}/publish")
-  @Operation(
-      summary = "Publish virtual account to Kafka",
-      description = "Announces or re-announces a virtual account to the ledger via Kafka")
-  public ResponseEntity<Void> publishVirtualAccount(@PathVariable String vaId) {
-    virtualAccountAnnouncer.announceVirtualAccount(vaId);
-    return ResponseEntity.noContent().build();
   }
 }

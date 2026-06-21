@@ -4,20 +4,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.softspark.chaos.account.bootstrap.CreateLedgerAccountRequest;
+import com.softspark.chaos.account.bootstrap.LedgerAccountProvisioningClient;
+import com.softspark.chaos.account.bootstrap.LedgerProvisioningException;
 import com.softspark.chaos.account.dto.CreateVirtualAccountRequest;
-import com.softspark.chaos.account.enumeration.AccountOwnershipType;
-import com.softspark.chaos.account.enumeration.AccountStatus;
-import com.softspark.chaos.account.enumeration.CreatedVia;
-import com.softspark.chaos.account.model.VirtualAccount;
 import com.softspark.chaos.account.repository.VirtualAccountRepository;
+import com.softspark.chaos.exception.BadGatewayException;
 import com.softspark.chaos.exception.BadRequestException;
 import com.softspark.chaos.exception.ConflictException;
 import com.softspark.chaos.exception.NotFoundException;
-import com.softspark.chaos.organization.repository.OrganizationRepository;
+import com.softspark.chaos.exception.ServiceUnavailableException;
+import com.softspark.chaos.organization.service.CurrencyService;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,153 +29,118 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 /**
- * Unit tests for {@link VirtualAccountService}.
+ * Unit tests for {@link VirtualAccountService} (Phase 009 request-via-ledger behavior).
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("VirtualAccountService")
 class VirtualAccountServiceTest {
 
   @Mock private VirtualAccountRepository virtualAccountRepository;
-  @Mock private OrganizationRepository organizationRepository;
-  @Mock private ApplicationEventPublisher eventPublisher;
+  @Mock private LedgerAccountProvisioningClient ledgerClient;
+  @Mock private CurrencyService currencyService;
 
   @InjectMocks private VirtualAccountService service;
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-
-  private VirtualAccount buildSystemVa(String vaId) {
-    var va = new VirtualAccount();
-    va.setVaId(vaId);
-    va.setName("System Float");
-    va.setOwnershipType(AccountOwnershipType.SYSTEM);
-    va.setCurrency("GHS");
-    va.setStatus(AccountStatus.ACTIVE);
-    va.setCreatedVia(CreatedVia.API);
-    return va;
+  private static CreateVirtualAccountRequest system(String code, String category) {
+    return new CreateVirtualAccountRequest(
+        "Float Account", "SYSTEM", "GHS", null, code, category, null, null, null);
   }
 
-  private VirtualAccount buildOrgVa(String vaId, String orgId) {
-    var va = new VirtualAccount();
-    va.setVaId(vaId);
-    va.setName("Org VA");
-    va.setOwnershipType(AccountOwnershipType.ORGANIZATION);
-    va.setOrganizationId(orgId);
-    va.setCurrency("GHS");
-    va.setStatus(AccountStatus.ACTIVE);
-    va.setCreatedVia(CreatedVia.API);
-    return va;
+  private static CreateVirtualAccountRequest org(String orgId) {
+    return new CreateVirtualAccountRequest(
+        "Merchant VA", "ORGANIZATION", "GHS", orgId, null, null, null, null, null);
   }
 
-  // ── createVirtualAccount ───────────────────────────────────────────────────
+  // ── requestCreate ──────────────────────────────────────────────────────────
 
   @Nested
-  @DisplayName("createVirtualAccount")
-  class CreateVirtualAccountTests {
+  @DisplayName("requestCreate")
+  class RequestCreateTests {
 
     @Test
-    @DisplayName("SYSTEM VA is created without an organization")
-    void systemVaCreatedWithoutOrg() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Float Account", "SYSTEM", "GHS", null, null, null, null, "VA-001", false);
-      when(virtualAccountRepository.existsById("VA-001")).thenReturn(false);
-      var saved = buildSystemVa("VA-001");
-      when(virtualAccountRepository.save(any())).thenReturn(saved);
+    @DisplayName("SYSTEM request forwards to the ledger and writes nothing locally")
+    void systemRequestForwarded() {
+      var req = system("ASSET.PLATFORM.FLOAT", "ASSET");
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
+          .thenReturn("acct-1");
 
-      var response = service.createVirtualAccount(req);
+      var accepted = service.requestCreate(req, "tok");
 
-      assertThat(response.ownershipType()).isEqualTo(AccountOwnershipType.SYSTEM);
-      verify(organizationRepository, never()).save(any());
+      assertThat(accepted.status()).isEqualTo("REQUESTED");
+      assertThat(accepted.accountCode()).isEqualTo("ASSET.PLATFORM.FLOAT");
+
+      ArgumentCaptor<CreateLedgerAccountRequest> captor =
+          ArgumentCaptor.forClass(CreateLedgerAccountRequest.class);
+      verify(ledgerClient).createAccount(captor.capture(), any());
+      assertThat(captor.getValue().accountOwnershipType()).isEqualTo("SYSTEM");
+      assertThat(captor.getValue().currency()).isEqualTo("GHS");
+      verify(virtualAccountRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("ORGANIZATION VA without orgId throws BadRequestException")
-    void orgVaWithoutOrgIdThrows() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Merchant VA", "ORGANIZATION", "GHS", null, null, null, null, null, false);
+    @DisplayName("ORGANIZATION request defaults the category to LIABILITY")
+    void orgRequestDefaultsCategory() {
+      var req = org("org-123");
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
+          .thenReturn("acct-2");
 
-      assertThatThrownBy(() -> service.createVirtualAccount(req))
+      service.requestCreate(req, "tok");
+
+      ArgumentCaptor<CreateLedgerAccountRequest> captor =
+          ArgumentCaptor.forClass(CreateLedgerAccountRequest.class);
+      verify(ledgerClient).createAccount(captor.capture(), any());
+      assertThat(captor.getValue().accountCategory()).isEqualTo("LIABILITY");
+      assertThat(captor.getValue().organizationId()).isEqualTo("org-123");
+    }
+
+    @Test
+    @DisplayName("SYSTEM without accountCode throws BadRequestException")
+    void systemWithoutCodeThrows() {
+      assertThatThrownBy(() -> service.requestCreate(system(null, "ASSET"), "tok"))
           .isInstanceOf(BadRequestException.class)
-          .hasMessageContaining("Organization ID is required");
+          .hasMessageContaining("accountCode");
     }
 
     @Test
-    @DisplayName("new organization is saved when it does not exist")
-    void newOrgIsSaved() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Merchant VA", "ORGANIZATION", "GHS", "org-new", "New Org", null, null, null, false);
-      when(organizationRepository.existsById("org-new")).thenReturn(false);
-      var saved = buildOrgVa("va-gen", "org-new");
-      when(virtualAccountRepository.save(any())).thenReturn(saved);
-
-      service.createVirtualAccount(req);
-
-      verify(organizationRepository).save(any());
+    @DisplayName("ORGANIZATION without orgId throws BadRequestException")
+    void orgWithoutOrgIdThrows() {
+      assertThatThrownBy(() -> service.requestCreate(org(null), "tok"))
+          .isInstanceOf(BadRequestException.class)
+          .hasMessageContaining("organizationId");
     }
 
     @Test
-    @DisplayName("existing organization is linked without saving a new org")
-    void existingOrgLinkedWithoutSave() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Merchant VA", "ORGANIZATION", "GHS", "org-existing", null, null, null, null, false);
-      when(organizationRepository.existsById("org-existing")).thenReturn(true);
-      var saved = buildOrgVa("va-gen", "org-existing");
-      when(virtualAccountRepository.save(any())).thenReturn(saved);
+    @DisplayName("inactive currency is rejected before the ledger call")
+    void inactiveCurrencyRejected() {
+      doThrow(new ConflictException("Currency is not active: GHS"))
+          .when(currencyService)
+          .assertUsable("GHS");
 
-      service.createVirtualAccount(req);
-
-      verify(organizationRepository, never()).save(any());
+      assertThatThrownBy(() -> service.requestCreate(org("org-1"), "tok"))
+          .isInstanceOf(ConflictException.class);
+      verify(ledgerClient, never()).createAccount(any(CreateLedgerAccountRequest.class), any());
     }
 
     @Test
-    @DisplayName("duplicate vaId throws ConflictException")
-    void duplicateVaIdThrowsConflict() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Float Account", "SYSTEM", "GHS", null, null, null, null, "VA-DUP", false);
-      when(virtualAccountRepository.existsById("VA-DUP")).thenReturn(true);
+    @DisplayName("ledger 5xx maps to BadGatewayException")
+    void ledgerServerErrorMapsToBadGateway() {
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
+          .thenThrow(new LedgerProvisioningException("boom", 503));
 
-      assertThatThrownBy(() -> service.createVirtualAccount(req))
-          .isInstanceOf(ConflictException.class)
-          .hasMessageContaining("VA-DUP");
+      assertThatThrownBy(() -> service.requestCreate(org("org-1"), "tok"))
+          .isInstanceOf(BadGatewayException.class);
     }
 
     @Test
-    @DisplayName("announce=true publishes VirtualAccountCreatedEvent")
-    void announceTruePublishesEvent() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Merchant VA", "ORGANIZATION", "GHS", "org-123", null, null, null, null, true);
-      when(organizationRepository.existsById("org-123")).thenReturn(true);
-      var saved = buildOrgVa("va-gen", "org-123");
-      when(virtualAccountRepository.save(any())).thenReturn(saved);
+    @DisplayName("ledger transport failure maps to ServiceUnavailableException")
+    void ledgerTransportFailureMapsToServiceUnavailable() {
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
+          .thenThrow(new LedgerProvisioningException("unreachable"));
 
-      service.createVirtualAccount(req);
-
-      ArgumentCaptor<VirtualAccountService.VirtualAccountCreatedEvent> captor =
-          ArgumentCaptor.forClass(VirtualAccountService.VirtualAccountCreatedEvent.class);
-      verify(eventPublisher).publishEvent(captor.capture());
-      assertThat(captor.getValue().virtualAccount().getVaId()).isEqualTo("va-gen");
-    }
-
-    @Test
-    @DisplayName("announce=false does not publish any event")
-    void announceFalseDoesNotPublish() {
-      var req =
-          new CreateVirtualAccountRequest(
-              "Float Account", "SYSTEM", "GHS", null, null, null, null, "VA-002", false);
-      when(virtualAccountRepository.existsById("VA-002")).thenReturn(false);
-      when(virtualAccountRepository.save(any())).thenReturn(buildSystemVa("VA-002"));
-
-      service.createVirtualAccount(req);
-
-      verify(eventPublisher, never()).publishEvent(any());
+      assertThatThrownBy(() -> service.requestCreate(org("org-1"), "tok"))
+          .isInstanceOf(ServiceUnavailableException.class);
     }
   }
 

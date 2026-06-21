@@ -20,7 +20,9 @@ import java.math.BigDecimal;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record LedgerBalanceDto(
     String accountId,
-    BigDecimal balance,
-    BigDecimal availableBalance,
+    BigDecimal available,
+    BigDecimal total,
+    BigDecimal pending,
+    BigDecimal reserved,
     String currency,
     String updatedAt) {}

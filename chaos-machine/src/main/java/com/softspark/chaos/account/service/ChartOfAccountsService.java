@@ -103,11 +103,13 @@ public class ChartOfAccountsService {
    *
    * <p>This is idempotent: already-provisioned roles are skipped.
    *
+   * @param callerToken the acting user's bearer token, forwarded to the ledger ({@code null} falls
+   *                    back to the configured service token)
    * @return a {@link BootstrapResult} with the current provisioning state counts
    */
-  public BootstrapResult triggerBootstrap() {
+  public BootstrapResult triggerBootstrap(String callerToken) {
     log.info("Manual chart-of-accounts bootstrap triggered via HTTP");
-    return bootstrapRunner.triggerManualBootstrap();
+    return bootstrapRunner.triggerManualBootstrap(callerToken);
   }
 
   private ChartOfAccountsRoleResponse mapToResponse(AccountRoleEntity entity) {

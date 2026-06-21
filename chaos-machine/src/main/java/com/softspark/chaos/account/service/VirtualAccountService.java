@@ -1,24 +1,24 @@
 package com.softspark.chaos.account.service;
 
+import com.softspark.chaos.account.bootstrap.CreateLedgerAccountRequest;
+import com.softspark.chaos.account.bootstrap.LedgerAccountProvisioningClient;
+import com.softspark.chaos.account.bootstrap.LedgerProvisioningException;
 import com.softspark.chaos.account.dto.CreateVirtualAccountRequest;
+import com.softspark.chaos.account.dto.VirtualAccountRequestAccepted;
 import com.softspark.chaos.account.dto.VirtualAccountResponse;
 import com.softspark.chaos.account.enumeration.AccountOwnershipType;
 import com.softspark.chaos.account.enumeration.AccountStatus;
-import com.softspark.chaos.account.enumeration.Channel;
-import com.softspark.chaos.account.enumeration.CreatedVia;
 import com.softspark.chaos.account.model.VirtualAccount;
 import com.softspark.chaos.account.repository.VirtualAccountRepository;
-import com.softspark.chaos.base.Ids;
 import com.softspark.chaos.base.PageResponse;
+import com.softspark.chaos.exception.BadGatewayException;
 import com.softspark.chaos.exception.BadRequestException;
 import com.softspark.chaos.exception.ConflictException;
 import com.softspark.chaos.exception.NotFoundException;
-import com.softspark.chaos.organization.enumeration.OrganizationStatus;
-import com.softspark.chaos.organization.model.Organization;
-import com.softspark.chaos.organization.repository.OrganizationRepository;
+import com.softspark.chaos.exception.ServiceUnavailableException;
+import com.softspark.chaos.organization.service.CurrencyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -27,9 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Service for managing virtual accounts.
- * <p>
- * Provides operations for creating and listing virtual accounts, including organization linking
- * and optional Kafka announcement.
+ *
+ * <p>Phase 009 inverts ownership: the ledger owns virtual accounts. {@link
+ * #requestCreate(CreateVirtualAccountRequest)} validates the request, forwards it to the ledger over
+ * HTTP, and returns without writing anything locally — the VA materializes only when the resulting
+ * {@code ledger.account.created} event is projected. The list/get operations read that projection.
  */
 @Service
 public class VirtualAccountService {
@@ -37,33 +39,38 @@ public class VirtualAccountService {
   private static final Logger log = LoggerFactory.getLogger(VirtualAccountService.class);
   private static final int DEFAULT_PAGE_SIZE = 20;
   private static final int MAX_PAGE_SIZE = 100;
+  private static final String DEFAULT_ORG_CATEGORY = "LIABILITY";
 
   private final VirtualAccountRepository virtualAccountRepository;
-  private final OrganizationRepository organizationRepository;
-  private final ApplicationEventPublisher eventPublisher;
+  private final LedgerAccountProvisioningClient ledgerClient;
+  private final CurrencyService currencyService;
 
   public VirtualAccountService(
       VirtualAccountRepository virtualAccountRepository,
-      OrganizationRepository organizationRepository,
-      ApplicationEventPublisher eventPublisher) {
+      LedgerAccountProvisioningClient ledgerClient,
+      CurrencyService currencyService) {
     this.virtualAccountRepository = virtualAccountRepository;
-    this.organizationRepository = organizationRepository;
-    this.eventPublisher = eventPublisher;
+    this.ledgerClient = ledgerClient;
+    this.currencyService = currencyService;
   }
 
   /**
-   * Creates a new virtual account.
+   * Requests creation of a virtual account from the ledger. Performs no local persistence — the VA
+   * appears in the registry only after the {@code ledger.account.created} projection runs.
    *
-   * @param request the creation request
-   * @return the created virtual account
-   * @throws BadRequestException if validation fails
-   * @throws ConflictException   if the VA ID already exists
+   * @param request     the creation request
+   * @param callerToken the acting user's bearer token, forwarded to the ledger ({@code null} falls
+   *                    back to the configured service token)
+   * @return an acceptance echo describing the forwarded request
+   * @throws BadRequestException       if validation fails (unknown currency, missing fields)
+   * @throws ConflictException         if the currency is inactive or the ledger reports a conflict
+   * @throws BadGatewayException       if the ledger returns a server error
+   * @throws ServiceUnavailableException if the ledger is unreachable / its circuit is open
    */
-  @Transactional
-  public VirtualAccountResponse createVirtualAccount(CreateVirtualAccountRequest request) {
-    log.info("Creating virtual account: {}", request.name());
+  public VirtualAccountRequestAccepted requestCreate(
+      CreateVirtualAccountRequest request, String callerToken) {
+    log.info("Requesting ledger account for VA: {}", request.name());
 
-    // Parse ownership type
     AccountOwnershipType ownershipType;
     try {
       ownershipType = AccountOwnershipType.valueOf(request.ownershipType());
@@ -71,81 +78,61 @@ public class VirtualAccountService {
       throw new BadRequestException("Invalid ownership type: " + request.ownershipType(), null);
     }
 
-    // Generate or validate VA ID
-    String vaId = request.vaId();
-    if (vaId == null || vaId.isBlank()) {
-      vaId = Ids.generate();
+    currencyService.assertUsable(request.currency());
+    String currency = request.currency().toUpperCase();
+
+    String accountCode = blankToNull(request.accountCode());
+    String accountCategory = blankToNull(request.accountCategory());
+    String organizationId = blankToNull(request.organizationId());
+
+    if (ownershipType == AccountOwnershipType.SYSTEM) {
+      if (accountCode == null) {
+        throw new BadRequestException("accountCode is required for SYSTEM accounts", null);
+      }
+      if (accountCategory == null) {
+        throw new BadRequestException("accountCategory is required for SYSTEM accounts", null);
+      }
     } else {
-      if (virtualAccountRepository.existsById(vaId)) {
-        throw new ConflictException("Virtual account already exists: " + vaId);
+      if (organizationId == null) {
+        throw new BadRequestException("organizationId is required for ORGANIZATION accounts", null);
+      }
+      if (accountCategory == null) {
+        accountCategory = DEFAULT_ORG_CATEGORY;
       }
     }
 
-    // Validate organization requirements
-    String organizationId = request.organizationId();
-    boolean newOrganization = false;
-    if (ownershipType == AccountOwnershipType.ORGANIZATION) {
-      if (organizationId == null || organizationId.isBlank()) {
-        throw new BadRequestException(
-            "Organization ID is required for ORGANIZATION ownership type", null);
-      }
+    var ledgerRequest =
+        new CreateLedgerAccountRequest(
+            accountCode,
+            request.name(),
+            accountCategory,
+            currency,
+            blankToNull(request.parentAccountId()),
+            request.overdraftLimit(),
+            request.minimumBalance(),
+            ownershipType.name(),
+            organizationId);
 
-      // Create or link organization
-      if (!organizationRepository.existsById(organizationId)) {
-        var organization = new Organization();
-        organization.setOrganizationId(organizationId);
-        organization.setName(
-            request.organizationName() != null && !request.organizationName().isBlank()
-                ? request.organizationName()
-                : "Organization " + organizationId);
-        organization.setStatus(OrganizationStatus.ACTIVE);
-        organizationRepository.save(organization);
-        newOrganization = true;
-        log.info("Created new organization: {}", organizationId);
-      }
+    try {
+      String accountId = ledgerClient.createAccount(ledgerRequest, callerToken);
+      log.info(
+          "Forwarded VA creation to ledger (ownership={}, code={}, org={}, ledgerAccountId={})",
+          ownershipType,
+          accountCode,
+          organizationId,
+          accountId);
+    } catch (LedgerProvisioningException e) {
+      throw mapLedgerError(e);
     }
 
-    // Parse optional enums
-    Channel channel = null;
-    if (request.channel() != null && !request.channel().isBlank()) {
-      try {
-        channel = Channel.valueOf(request.channel());
-      } catch (IllegalArgumentException e) {
-        throw new BadRequestException("Invalid channel: " + request.channel(), null);
-      }
-    }
-
-    AccountStatus status = AccountStatus.ACTIVE;
-    if (request.status() != null && !request.status().isBlank()) {
-      try {
-        status = AccountStatus.valueOf(request.status());
-      } catch (IllegalArgumentException e) {
-        throw new BadRequestException("Invalid status: " + request.status(), null);
-      }
-    }
-
-    // Create virtual account
-    var va = new VirtualAccount();
-    va.setVaId(vaId);
-    va.setName(request.name());
-    va.setOwnershipType(ownershipType);
-    va.setOrganizationId(organizationId);
-    va.setCurrency(request.currency());
-    va.setStatus(status);
-    va.setChannel(channel);
-    va.setAccountRole(null); // Set by bootstrap for SYSTEM accounts
-    va.setCreatedVia(CreatedVia.API);
-    var saved = virtualAccountRepository.save(va);
-
-    log.info("Created virtual account: {} ({})", saved.getVaId(), saved.getName());
-
-    // Publish announcement event if requested
-    if (Boolean.TRUE.equals(request.announce())) {
-      eventPublisher.publishEvent(new VirtualAccountCreatedEvent(saved, newOrganization));
-      log.info("Published VA creation event for: {}", saved.getVaId());
-    }
-
-    return mapToResponse(saved);
+    return new VirtualAccountRequestAccepted(
+        "REQUESTED",
+        "Creation requested from the ledger; the account will appear in the registry once the "
+            + "ledger.account.created event is consumed.",
+        accountCode,
+        organizationId,
+        currency,
+        ownershipType.name());
   }
 
   /**
@@ -195,7 +182,6 @@ public class VirtualAccountService {
 
     Page<VirtualAccount> vaPage;
 
-    // Apply filters
     if (search != null && !search.isBlank()) {
       vaPage = virtualAccountRepository.searchByNameOrId(search, pageable);
     } else if (ownershipType != null && !ownershipType.isBlank()) {
@@ -240,12 +226,25 @@ public class VirtualAccountService {
         va.getUpdatedAt());
   }
 
+  private static String blankToNull(String value) {
+    return value == null || value.isBlank() ? null : value;
+  }
+
   /**
-   * Event published after a virtual account is created with announce=true.
-   *
-   * @param virtualAccount  the created virtual account
-   * @param newOrganization {@code true} if the organization was created as part of this request
+   * Maps a ledger provisioning failure to an HTTP-mapped exception: 4xx → 400 (409 → conflict), 5xx
+   * → 502, transport/circuit failures (status 0) → 503.
    */
-  public record VirtualAccountCreatedEvent(
-      VirtualAccount virtualAccount, boolean newOrganization) {}
+  private RuntimeException mapLedgerError(LedgerProvisioningException e) {
+    int status = e.getStatusCode();
+    if (status == 409) {
+      return new ConflictException("Account already exists in the ledger: " + e.getMessage());
+    }
+    if (status >= 400 && status < 500) {
+      return new BadRequestException("Ledger rejected the request: " + e.getMessage(), e);
+    }
+    if (status >= 500) {
+      return new BadGatewayException("Ledger returned an error: " + e.getMessage(), e);
+    }
+    return new ServiceUnavailableException("Ledger is unavailable: " + e.getMessage(), e);
+  }
 }
