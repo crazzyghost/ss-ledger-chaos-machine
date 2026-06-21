@@ -63,6 +63,7 @@ public class VirtualAccountProjectionService {
     va.setCurrency(data.currency());
     va.setStatus(parseStatus(data.status()));
     va.setAccountCode(data.accountCode());
+    va.setAccountCategory(data.accountCategory());
     va.setCreatedVia(CreatedVia.KAFKA);
 
     linkRole(data, va);

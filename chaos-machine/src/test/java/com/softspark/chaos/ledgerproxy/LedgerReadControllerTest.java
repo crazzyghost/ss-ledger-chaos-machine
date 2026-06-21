@@ -13,7 +13,11 @@ import com.softspark.chaos.advice.GlobalExceptionHandler;
 import com.softspark.chaos.config.SecurityConfiguration;
 import com.softspark.chaos.ledgerproxy.circuitbreaker.CircuitBreakerOpenException;
 import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import java.math.BigDecimal;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -48,7 +52,9 @@ class LedgerReadControllerTest {
         "ACTIVE",
         "SYSTEM",
         null,
-        null);
+        null,
+        "2026-01-01T00:00:00",
+        "2026-01-01T00:00:00");
   }
 
   @Nested
@@ -60,7 +66,8 @@ class LedgerReadControllerTest {
     @DisplayName("returns 200 with paginated account list")
     void returns200WithAccounts() throws Exception {
       var page = new LedgerPageDto<>(List.of(sampleAccount()), 1, 1L, 0, 20);
-      when(ledgerClient.listAccounts(any(), isNull(), isNull(), isNull(), anyInt(), anyInt()))
+      when(ledgerClient.listAccounts(
+              any(), isNull(), isNull(), isNull(), isNull(), anyInt(), anyInt()))
           .thenReturn(page);
 
       mockMvc
@@ -74,7 +81,7 @@ class LedgerReadControllerTest {
     @WithMockUser
     @DisplayName("circuit breaker open returns 500")
     void circuitBreakerOpen_returns500() throws Exception {
-      when(ledgerClient.listAccounts(any(), any(), any(), any(), anyInt(), anyInt()))
+      when(ledgerClient.listAccounts(any(), any(), any(), any(), any(), anyInt(), anyInt()))
           .thenThrow(new CircuitBreakerOpenException("OPEN"));
 
       mockMvc
@@ -98,6 +105,128 @@ class LedgerReadControllerTest {
           .perform(get("/api/v0/ledger/accounts/acct-1").accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.accountId").value("acct-1"));
+    }
+  }
+
+  @Nested
+  @DisplayName("GET /api/v0/ledger/accounts/{id}/transaction-history")
+  class GetTransactionHistory {
+
+    private LedgerTransactionHistoryDto sampleRecord() {
+      return new LedgerTransactionHistoryDto(
+          "line-1",
+          "entry-1",
+          "2026-01-01T00:00:00Z",
+          "ref-1",
+          "COLLECTION",
+          "COLLECTION",
+          "CREDIT",
+          new BigDecimal("100.00"),
+          "GHS",
+          new BigDecimal("100.00"),
+          BigDecimal.ZERO,
+          BigDecimal.ZERO,
+          "Collection completed",
+          null,
+          1L,
+          1L,
+          "acct-2",
+          List.of());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("returns 200 with cursor page of history records")
+    void returns200WithCursorPage() throws Exception {
+      var page =
+          new LedgerCursorPageDto<>(List.of(sampleRecord()), "next-cursor", null, true, 20);
+      when(ledgerClient.getAccountTransactionHistory(
+              any(), anyString(), any(), any(), any(), any(), any(), any(), any()))
+          .thenReturn(page);
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/accounts/acct-1/transaction-history")
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.items[0].lineId").value("line-1"))
+          .andExpect(jsonPath("$.items[0].direction").value("CREDIT"))
+          .andExpect(jsonPath("$.nextCursor").value("next-cursor"))
+          .andExpect(jsonPath("$.hasMore").value(true));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("circuit breaker open returns 500")
+    void circuitBreakerOpen_returns500() throws Exception {
+      when(ledgerClient.getAccountTransactionHistory(
+              any(), anyString(), any(), any(), any(), any(), any(), any(), any()))
+          .thenThrow(new CircuitBreakerOpenException("OPEN"));
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/accounts/acct-1/transaction-history")
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isInternalServerError())
+          .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
+    }
+  }
+
+  @Nested
+  @DisplayName("GET /api/v0/ledger/transactions/{ref}")
+  class GetTransactionByReference {
+
+    private LedgerTransactionReferenceDto sampleLeg() {
+      return new LedgerTransactionReferenceDto(
+          "line-1",
+          "entry-1",
+          "acct-1",
+          "ORGANIZATION",
+          "org-1",
+          "2026-01-01T00:00:00Z",
+          "ref-1",
+          "TRANSFER",
+          "TRANSFER",
+          "DEBIT",
+          new BigDecimal("50.00"),
+          "GHS",
+          new BigDecimal("50.00"),
+          BigDecimal.ZERO,
+          BigDecimal.ZERO,
+          "Internal transfer",
+          null,
+          1L,
+          1L);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("returns 200 with the transaction legs")
+    void returns200WithLegs() throws Exception {
+      var page = new LedgerPageDto<>(List.of(sampleLeg()), 1, 1L, 0, 20);
+      when(ledgerClient.getTransactionByReference(any(), anyString())).thenReturn(page);
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/transactions/ref-1").accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.items[0].lineId").value("line-1"))
+          .andExpect(jsonPath("$.items[0].transactionRef").value("ref-1"))
+          .andExpect(jsonPath("$.items[0].direction").value("DEBIT"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("circuit breaker open returns 500")
+    void circuitBreakerOpen_returns500() throws Exception {
+      when(ledgerClient.getTransactionByReference(any(), anyString()))
+          .thenThrow(new CircuitBreakerOpenException("OPEN"));
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/transactions/ref-1").accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isInternalServerError())
+          .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
     }
   }
 }

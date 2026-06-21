@@ -58,17 +58,17 @@ public class VirtualAccountService {
    * Requests creation of a virtual account from the ledger. Performs no local persistence — the VA
    * appears in the registry only after the {@code ledger.account.created} projection runs.
    *
-   * @param request     the creation request
-   * @param callerToken the acting user's bearer token, forwarded to the ledger ({@code null} falls
-   *                    back to the configured service token)
+   * <p>The ledger call is authorized with the caller's access token resolved from the security
+   * context (see {@link com.softspark.chaos.auth.AuthenticationContext}).
+   *
+   * @param request the creation request
    * @return an acceptance echo describing the forwarded request
    * @throws BadRequestException       if validation fails (unknown currency, missing fields)
    * @throws ConflictException         if the currency is inactive or the ledger reports a conflict
    * @throws BadGatewayException       if the ledger returns a server error
    * @throws ServiceUnavailableException if the ledger is unreachable / its circuit is open
    */
-  public VirtualAccountRequestAccepted requestCreate(
-      CreateVirtualAccountRequest request, String callerToken) {
+  public VirtualAccountRequestAccepted requestCreate(CreateVirtualAccountRequest request) {
     log.info("Requesting ledger account for VA: {}", request.name());
 
     AccountOwnershipType ownershipType;
@@ -114,7 +114,7 @@ public class VirtualAccountService {
             organizationId);
 
     try {
-      String accountId = ledgerClient.createAccount(ledgerRequest, callerToken);
+      String accountId = ledgerClient.createAccount(ledgerRequest);
       log.info(
           "Forwarded VA creation to ledger (ownership={}, code={}, org={}, ledgerAccountId={})",
           ownershipType,
@@ -221,6 +221,7 @@ public class VirtualAccountService {
         va.getStatus(),
         va.getChannel(),
         va.getAccountRole(),
+        va.getAccountCategory(),
         va.getCreatedVia(),
         va.getCreatedAt(),
         va.getUpdatedAt());

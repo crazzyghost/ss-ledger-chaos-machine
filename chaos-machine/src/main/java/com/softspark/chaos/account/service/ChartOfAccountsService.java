@@ -103,13 +103,14 @@ public class ChartOfAccountsService {
    *
    * <p>This is idempotent: already-provisioned roles are skipped.
    *
-   * @param callerToken the acting user's bearer token, forwarded to the ledger ({@code null} falls
-   *                    back to the configured service token)
+   * <p>Ledger calls are authorized with the caller's access token resolved from the security context
+   * (see {@link com.softspark.chaos.auth.AuthenticationContext}).
+   *
    * @return a {@link BootstrapResult} with the current provisioning state counts
    */
-  public BootstrapResult triggerBootstrap(String callerToken) {
+  public BootstrapResult triggerBootstrap() {
     log.info("Manual chart-of-accounts bootstrap triggered via HTTP");
-    return bootstrapRunner.triggerManualBootstrap(callerToken);
+    return bootstrapRunner.triggerManualBootstrap();
   }
 
   private ChartOfAccountsRoleResponse mapToResponse(AccountRoleEntity entity) {

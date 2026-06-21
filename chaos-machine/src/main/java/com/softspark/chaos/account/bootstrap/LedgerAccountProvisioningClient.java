@@ -1,5 +1,6 @@
 package com.softspark.chaos.account.bootstrap;
 
+import com.softspark.chaos.auth.AuthenticationContext;
 import com.softspark.chaos.config.LedgerProperties;
 import jakarta.annotation.Nullable;
 import java.io.IOException;
@@ -57,56 +58,27 @@ public class LedgerAccountProvisioningClient {
    */
   public String createAccount(
       SystemAccountDefinition definition, @Nullable String parentAccountId) {
-    return createAccount(definition, parentAccountId, null);
-  }
-
-  /**
-   * Creates an account in the ledger, authorizing the call with the caller's bearer token when
-   * provided (otherwise the configured service token).
-   *
-   * @param definition      the system account definition to provision
-   * @param parentAccountId the ledger account ID of the parent, or {@code null} for root accounts
-   * @param callerToken     the acting user's bearer token to forward, or {@code null} to use the
-   *                        static service token
-   * @return the ledger-assigned account ID
-   * @throws LedgerProvisioningException if provisioning fails after all retries
-   */
-  public String createAccount(
-      SystemAccountDefinition definition,
-      @Nullable String parentAccountId,
-      @Nullable String callerToken) {
-    return createAccount(buildCreateRequest(definition, parentAccountId), callerToken);
+    return createAccount(buildCreateRequest(definition, parentAccountId));
   }
 
   /**
    * Issues a {@code POST /api/v0/accounts} for an already-built request, applying the same
    * idempotent 409-handling and bounded retry as the catalog path.
    *
-   * <p>On a 409 Conflict the existing account id is resolved by {@code accountCode} lookup; when the
-   * request carries no code (e.g. an organization account where the ledger assigns the code) the
-   * 409 is treated as "already requested" and {@code null} is returned. On non-retryable 4xx a
-   * {@link LedgerProvisioningException} is thrown immediately; on 5xx the request is retried.
+   * <p>The call is authorized with the current caller's access token when one is present in the
+   * {@link com.softspark.chaos.auth.AuthenticationContext} (UI-driven requests), otherwise with the
+   * statically configured service token (startup / reconciler). On a 409 Conflict the existing
+   * account id is resolved by {@code accountCode} lookup; when the request carries no code the 409
+   * is treated as "already requested" and {@code null} is returned. Non-retryable 4xx throw
+   * immediately; 5xx are retried.
    *
    * @param request the fully-built ledger create-account request
    * @return the ledger-assigned account id, or {@code null} when a code-less account already existed
    * @throws LedgerProvisioningException if provisioning fails after all retries
    */
   public String createAccount(CreateLedgerAccountRequest request) {
-    return createAccount(request, null);
-  }
-
-  /**
-   * Issues a {@code POST /api/v0/accounts} for an already-built request, authorizing with the
-   * caller's bearer token when provided (otherwise the configured service token).
-   *
-   * @param request     the fully-built ledger create-account request
-   * @param callerToken the acting user's bearer token to forward, or {@code null}
-   * @return the ledger-assigned account id, or {@code null} when a code-less account already existed
-   * @throws LedgerProvisioningException if provisioning fails after all retries
-   */
-  public String createAccount(CreateLedgerAccountRequest request, @Nullable String callerToken) {
     try {
-      return createAccountWithRetry(request, callerToken);
+      return createAccountWithRetry(request);
     } catch (LedgerProvisioningException e) {
       if (e.getStatusCode() == 409) {
         if (request.accountCode() == null || request.accountCode().isBlank()) {
@@ -115,7 +87,7 @@ public class LedgerAccountProvisioningClient {
         }
         log.info(
             "Ledger conflict for code '{}' — resolving via code lookup", request.accountCode());
-        return findAccountByCode(request.accountCode(), callerToken)
+        return findAccountByCode(request.accountCode())
             .orElseThrow(
                 () ->
                     new LedgerProvisioningException(
@@ -135,19 +107,6 @@ public class LedgerAccountProvisioningClient {
    * @throws LedgerProvisioningException if the ledger returns an error
    */
   public Optional<String> findAccountByCode(String accountCode) {
-    return findAccountByCode(accountCode, null);
-  }
-
-  /**
-   * Looks up an account by its hierarchical code, authorizing with the caller's bearer token when
-   * provided (otherwise the configured service token).
-   *
-   * @param accountCode the code to search for
-   * @param callerToken the acting user's bearer token to forward, or {@code null}
-   * @return an {@link Optional} containing the ledger account ID, or empty if not found
-   * @throws LedgerProvisioningException if the ledger returns an error
-   */
-  public Optional<String> findAccountByCode(String accountCode, @Nullable String callerToken) {
     log.debug("Looking up ledger account by code: {}", accountCode);
     var response =
         restClient
@@ -159,7 +118,7 @@ public class LedgerAccountProvisioningClient {
                         .queryParam("size", 200)
                         .queryParam("page", 0)
                         .build())
-            .headers(headers -> applyAuth(headers, callerToken))
+            .headers(this::applyAuth)
             .retrieve()
             .onStatus(
                 status -> !status.is2xxSuccessful(),
@@ -184,14 +143,13 @@ public class LedgerAccountProvisioningClient {
   // Internal helpers
   // -------------------------------------------------------------------------
 
-  private String createAccountWithRetry(
-      CreateLedgerAccountRequest request, @Nullable String callerToken) {
+  private String createAccountWithRetry(CreateLedgerAccountRequest request) {
     int attempts = 0;
     LedgerProvisioningException lastException = null;
 
     while (attempts < ledgerProperties.retry().maxAttempts()) {
       try {
-        return doCreateAccount(request, callerToken);
+        return doCreateAccount(request);
       } catch (LedgerProvisioningException e) {
         if (e.getStatusCode() > 0 && e.getStatusCode() < 500) {
           throw e; // 4xx — do not retry
@@ -227,13 +185,13 @@ public class LedgerAccountProvisioningClient {
         lastException);
   }
 
-  private String doCreateAccount(CreateLedgerAccountRequest request, @Nullable String callerToken) {
+  private String doCreateAccount(CreateLedgerAccountRequest request) {
     var response =
         restClient
             .post()
             .uri(ledgerProperties.accountsPath())
             .contentType(MediaType.APPLICATION_JSON)
-            .headers(headers -> applyAuth(headers, callerToken))
+            .headers(this::applyAuth)
             .body(request)
             .retrieve()
             .onStatus(
@@ -277,11 +235,13 @@ public class LedgerAccountProvisioningClient {
   }
 
   /**
-   * Overrides the request {@code Authorization} header with the caller's bearer token when one is
-   * supplied; otherwise leaves the client's static service-token default header in place.
+   * Overrides the request {@code Authorization} header with the current caller's access token when
+   * one is present in the security context; otherwise leaves the client's static service-token
+   * default header in place (startup / reconciler).
    */
-  private void applyAuth(HttpHeaders headers, @Nullable String callerToken) {
-    if (callerToken != null && !callerToken.isBlank()) {
+  private void applyAuth(HttpHeaders headers) {
+    var callerToken = AuthenticationContext.currentAccessToken();
+    if (callerToken != null) {
       headers.set("Authorization", "Bearer " + callerToken);
     }
   }

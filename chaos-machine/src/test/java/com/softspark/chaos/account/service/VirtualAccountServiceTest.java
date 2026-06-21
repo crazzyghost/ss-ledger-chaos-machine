@@ -63,17 +63,16 @@ class VirtualAccountServiceTest {
     @DisplayName("SYSTEM request forwards to the ledger and writes nothing locally")
     void systemRequestForwarded() {
       var req = system("ASSET.PLATFORM.FLOAT", "ASSET");
-      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
-          .thenReturn("acct-1");
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class))).thenReturn("acct-1");
 
-      var accepted = service.requestCreate(req, "tok");
+      var accepted = service.requestCreate(req);
 
       assertThat(accepted.status()).isEqualTo("REQUESTED");
       assertThat(accepted.accountCode()).isEqualTo("ASSET.PLATFORM.FLOAT");
 
       ArgumentCaptor<CreateLedgerAccountRequest> captor =
           ArgumentCaptor.forClass(CreateLedgerAccountRequest.class);
-      verify(ledgerClient).createAccount(captor.capture(), any());
+      verify(ledgerClient).createAccount(captor.capture());
       assertThat(captor.getValue().accountOwnershipType()).isEqualTo("SYSTEM");
       assertThat(captor.getValue().currency()).isEqualTo("GHS");
       verify(virtualAccountRepository, never()).save(any());
@@ -83,14 +82,13 @@ class VirtualAccountServiceTest {
     @DisplayName("ORGANIZATION request defaults the category to LIABILITY")
     void orgRequestDefaultsCategory() {
       var req = org("org-123");
-      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
-          .thenReturn("acct-2");
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class))).thenReturn("acct-2");
 
-      service.requestCreate(req, "tok");
+      service.requestCreate(req);
 
       ArgumentCaptor<CreateLedgerAccountRequest> captor =
           ArgumentCaptor.forClass(CreateLedgerAccountRequest.class);
-      verify(ledgerClient).createAccount(captor.capture(), any());
+      verify(ledgerClient).createAccount(captor.capture());
       assertThat(captor.getValue().accountCategory()).isEqualTo("LIABILITY");
       assertThat(captor.getValue().organizationId()).isEqualTo("org-123");
     }
@@ -98,7 +96,7 @@ class VirtualAccountServiceTest {
     @Test
     @DisplayName("SYSTEM without accountCode throws BadRequestException")
     void systemWithoutCodeThrows() {
-      assertThatThrownBy(() -> service.requestCreate(system(null, "ASSET"), "tok"))
+      assertThatThrownBy(() -> service.requestCreate(system(null, "ASSET")))
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("accountCode");
     }
@@ -106,7 +104,7 @@ class VirtualAccountServiceTest {
     @Test
     @DisplayName("ORGANIZATION without orgId throws BadRequestException")
     void orgWithoutOrgIdThrows() {
-      assertThatThrownBy(() -> service.requestCreate(org(null), "tok"))
+      assertThatThrownBy(() -> service.requestCreate(org(null)))
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("organizationId");
     }
@@ -118,28 +116,28 @@ class VirtualAccountServiceTest {
           .when(currencyService)
           .assertUsable("GHS");
 
-      assertThatThrownBy(() -> service.requestCreate(org("org-1"), "tok"))
+      assertThatThrownBy(() -> service.requestCreate(org("org-1")))
           .isInstanceOf(ConflictException.class);
-      verify(ledgerClient, never()).createAccount(any(CreateLedgerAccountRequest.class), any());
+      verify(ledgerClient, never()).createAccount(any(CreateLedgerAccountRequest.class));
     }
 
     @Test
     @DisplayName("ledger 5xx maps to BadGatewayException")
     void ledgerServerErrorMapsToBadGateway() {
-      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class)))
           .thenThrow(new LedgerProvisioningException("boom", 503));
 
-      assertThatThrownBy(() -> service.requestCreate(org("org-1"), "tok"))
+      assertThatThrownBy(() -> service.requestCreate(org("org-1")))
           .isInstanceOf(BadGatewayException.class);
     }
 
     @Test
     @DisplayName("ledger transport failure maps to ServiceUnavailableException")
     void ledgerTransportFailureMapsToServiceUnavailable() {
-      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class), any()))
+      when(ledgerClient.createAccount(any(CreateLedgerAccountRequest.class)))
           .thenThrow(new LedgerProvisioningException("unreachable"));
 
-      assertThatThrownBy(() -> service.requestCreate(org("org-1"), "tok"))
+      assertThatThrownBy(() -> service.requestCreate(org("org-1")))
           .isInstanceOf(ServiceUnavailableException.class);
     }
   }

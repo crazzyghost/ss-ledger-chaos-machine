@@ -107,8 +107,7 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
     orderedDefs.forEach(this::seedRoleIfAbsent);
 
     if (props.provisionOnStartup()) {
-      // Startup has no caller — use the configured service token.
-      runRequests(orderedDefs, null);
+      runRequests(orderedDefs);
     } else {
       log.info("provision-on-startup=false — skipping HTTP requests (roles seeded as PENDING)");
     }
@@ -123,28 +122,17 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
    * Manually triggers provisioning for all non-{@link ProvisioningStatus#PROVISIONED} roles.
    *
    * <p>Intended for use by the reconciler and the manual bootstrap HTTP endpoint. Safe to call
-   * concurrently — each role is independently persisted; already-provisioned roles are skipped.
+   * concurrently — each role is independently persisted; already-provisioned roles are skipped. When
+   * invoked on a request thread (the UI-driven endpoint) the ledger calls are authorized with the
+   * caller's access token via {@link com.softspark.chaos.auth.AuthenticationContext}; on the
+   * reconciler/startup threads they fall back to the configured service token.
    *
    * @return a {@link BootstrapResult} summarising the current provisioning state
    */
   public BootstrapResult triggerManualBootstrap() {
-    return triggerManualBootstrap(null);
-  }
-
-  /**
-   * Manually triggers provisioning, forwarding the acting user's bearer token to the ledger.
-   *
-   * <p>Used by the UI-driven {@code POST /chart-of-accounts/bootstrap} endpoint so ledger calls are
-   * authorized as the logged-in user rather than with the static service token. A {@code null} token
-   * falls back to the configured service token (the reconciler path).
-   *
-   * @param callerToken the acting user's bearer token, or {@code null} to use the service token
-   * @return a {@link BootstrapResult} summarising the current provisioning state
-   */
-  public BootstrapResult triggerManualBootstrap(String callerToken) {
     var orderedDefs = catalogValidator.validateAndOrder(props.systemAccounts());
     orderedDefs.forEach(this::seedRoleIfAbsent);
-    var errors = runRequests(orderedDefs, callerToken);
+    var errors = runRequests(orderedDefs);
 
     long provisioned =
         accountRoleRepository.countByProvisioningStatus(ProvisioningStatus.PROVISIONED);
@@ -164,7 +152,7 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
    * left {@link ProvisioningStatus#PENDING} until the consumer projects the ledger event. Returns
    * the list of per-role error messages encountered.
    */
-  private List<String> runRequests(List<SystemAccountDefinition> orderedDefs, String callerToken) {
+  private List<String> runRequests(List<SystemAccountDefinition> orderedDefs) {
     Map<AccountRole, String> roleToAccountId = new HashMap<>();
     List<String> errors = new ArrayList<>();
 
@@ -182,7 +170,7 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
       // Resolve the parent's ledger account id; defer the child if it cannot be resolved yet.
       String parentAccountId = null;
       if (def.parentRole() != null) {
-        parentAccountId = resolveParentAccountId(def, roleToAccountId, callerToken);
+        parentAccountId = resolveParentAccountId(def, roleToAccountId);
         if (parentAccountId == null) {
           log.info(
               "Deferring role {} — parent {} not yet resolvable; reconcile will retry",
@@ -193,7 +181,7 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
       }
 
       try {
-        String accountId = ledgerClient.createAccount(def, parentAccountId, callerToken);
+        String accountId = ledgerClient.createAccount(def, parentAccountId);
         upsertRolePending(def);
         roleToAccountId.put(def.role(), accountId);
         log.info(
@@ -220,7 +208,7 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
    * the parent has not been created yet.
    */
   private String resolveParentAccountId(
-      SystemAccountDefinition def, Map<AccountRole, String> roleToAccountId, String callerToken) {
+      SystemAccountDefinition def, Map<AccountRole, String> roleToAccountId) {
     String fromRun = roleToAccountId.get(def.parentRole());
     if (fromRun != null) {
       return fromRun;
@@ -242,7 +230,7 @@ public class ChartOfAccountsBootstrapRunner implements ApplicationRunner {
 
     // Last resort: ask the ledger. A failure here must not crash the bootstrap — defer the child.
     try {
-      return ledgerClient.findAccountByCode(parentCode, callerToken).orElse(null);
+      return ledgerClient.findAccountByCode(parentCode).orElse(null);
     } catch (LedgerProvisioningException e) {
       log.warn(
           "Parent code lookup for {} failed ({}); deferring child {}",

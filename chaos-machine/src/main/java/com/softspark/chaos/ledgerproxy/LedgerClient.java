@@ -6,8 +6,11 @@ import com.softspark.chaos.ledgerproxy.circuitbreaker.CircuitBreaker;
 import com.softspark.chaos.ledgerproxy.circuitbreaker.CircuitBreakerOpenException;
 import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
 import jakarta.annotation.Nullable;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
@@ -53,6 +56,7 @@ public class LedgerClient {
    * @param ownershipType optional filter by ownership type
    * @param organizationId optional filter by owning org
    * @param status optional filter by account status
+   * @param currency optional filter by ISO-4217 currency code
    * @param page zero-based page number
    * @param size page size
    * @return a paginated list of ledger accounts
@@ -63,6 +67,7 @@ public class LedgerClient {
       @Nullable String ownershipType,
       @Nullable String organizationId,
       @Nullable String status,
+      @Nullable String currency,
       int page,
       int size) {
     var token = resolveToken(callerToken);
@@ -82,6 +87,7 @@ public class LedgerClient {
                       if (organizationId != null)
                         builder = builder.queryParam("organizationId", organizationId);
                       if (status != null) builder = builder.queryParam("status", status);
+                      if (currency != null) builder = builder.queryParam("currency", currency);
                       return builder.build();
                     })
                 .header("Authorization", "Bearer " + token)
@@ -223,6 +229,114 @@ public class LedgerClient {
                           "Ledger error: " + resp.getStatusCode().value());
                     })
                 .body(new ParameterizedTypeReference<LedgerPageDto<LedgerTransactionDto>>() {}));
+  }
+
+  /**
+   * Fetches a single cursor page of an account's transaction history from the ledger.
+   *
+   * <p>Proxies the ledger's {@code GET /api/v0/accounts/{id}/transaction-history} endpoint, which
+   * is keyset (cursor) paginated rather than offset paginated. The ledger rejects {@code page}
+   * params on this endpoint, so callers walk pages via the returned {@code nextCursor} /
+   * {@code previousCursor}.
+   *
+   * @param callerToken the caller's bearer token
+   * @param accountId the ledger account UUID whose history is requested
+   * @param from optional ISO-8601 start of the posted-at range (inclusive)
+   * @param to optional ISO-8601 end of the posted-at range (inclusive)
+   * @param entryType optional entry-type filter (comma-separated list accepted by the ledger)
+   * @param direction optional {@code DEBIT}/{@code CREDIT} direction filter
+   * @param transactionRef optional transaction-ref (idempotency key) filter
+   * @param cursor opaque page cursor; {@code null} fetches the first page
+   * @param size optional page size; {@code null} lets the ledger apply its default
+   * @return a cursor page of history records
+   * @throws NotFoundException if the ledger returns 4xx (e.g. unknown account)
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerCursorPageDto<LedgerTransactionHistoryDto> getAccountTransactionHistory(
+      String callerToken,
+      String accountId,
+      @Nullable String from,
+      @Nullable String to,
+      @Nullable String entryType,
+      @Nullable String direction,
+      @Nullable String transactionRef,
+      @Nullable String cursor,
+      @Nullable Integer size) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri(
+                    uriBuilder -> {
+                      var builder =
+                          uriBuilder.path("/api/v0/accounts/{id}/transaction-history");
+                      if (from != null) builder = builder.queryParam("from", from);
+                      if (to != null) builder = builder.queryParam("to", to);
+                      if (entryType != null) builder = builder.queryParam("entryType", entryType);
+                      if (direction != null) builder = builder.queryParam("direction", direction);
+                      if (transactionRef != null)
+                        builder = builder.queryParam("transactionRef", transactionRef);
+                      if (cursor != null) builder = builder.queryParam("cursor", cursor);
+                      if (size != null) builder = builder.queryParam("size", size);
+                      return builder.build(accountId);
+                    })
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::is4xxClientError,
+                    (req, resp) -> {
+                      throw new NotFoundException(
+                          "Ledger returned: " + resp.getStatusCode().value());
+                    })
+                .onStatus(
+                    HttpStatusCode::is5xxServerError,
+                    (req, resp) -> {
+                      throw new InternalServerErrorException(
+                          "Ledger error: " + resp.getStatusCode().value());
+                    })
+                .body(
+                    new ParameterizedTypeReference<
+                        LedgerCursorPageDto<LedgerTransactionHistoryDto>>() {}));
+  }
+
+  /**
+   * Fetches every journal-entry line that shares a single transaction reference.
+   *
+   * <p>Proxies the ledger's {@code GET /api/v0/transactions/{ref}} endpoint, which returns all legs
+   * of one transaction across the accounts that participated in it. Backs the transaction detail
+   * page.
+   *
+   * @param callerToken the caller's bearer token
+   * @param transactionRef the transaction reference (idempotency key) to resolve
+   * @return a page of transaction-reference records (one per leg)
+   * @throws NotFoundException if the ledger returns 4xx (e.g. unknown reference)
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerPageDto<LedgerTransactionReferenceDto> getTransactionByReference(
+      String callerToken, String transactionRef) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri("/api/v0/transactions/{ref}", transactionRef)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::is4xxClientError,
+                    (req, resp) -> {
+                      throw new NotFoundException("Transaction not found: " + transactionRef);
+                    })
+                .onStatus(
+                    HttpStatusCode::is5xxServerError,
+                    (req, resp) -> {
+                      throw new InternalServerErrorException(
+                          "Ledger error: " + resp.getStatusCode().value());
+                    })
+                .body(
+                    new ParameterizedTypeReference<
+                        LedgerPageDto<LedgerTransactionReferenceDto>>() {}));
   }
 
   private String resolveToken(String callerToken) {

@@ -56,6 +56,7 @@ class VirtualAccountControllerTest {
         AccountStatus.ACTIVE,
         null,
         null,
+        "LIABILITY",
         CreatedVia.KAFKA,
         Instant.now(),
         Instant.now());
@@ -74,7 +75,7 @@ class VirtualAccountControllerTest {
       var req =
           new CreateVirtualAccountRequest(
               "Test Account", "ORGANIZATION", "GHS", "org-123", null, null, null, null, null);
-      when(virtualAccountService.requestCreate(any(), any()))
+      when(virtualAccountService.requestCreate(any()))
           .thenReturn(
               new VirtualAccountRequestAccepted(
                   "REQUESTED", "forwarded", null, "org-123", "GHS", "ORGANIZATION"));
@@ -131,7 +132,7 @@ class VirtualAccountControllerTest {
       var req =
           new CreateVirtualAccountRequest(
               "My VA", "ORGANIZATION", "USD", "org-123", null, null, null, null, null);
-      when(virtualAccountService.requestCreate(any(), any()))
+      when(virtualAccountService.requestCreate(any()))
           .thenThrow(new BadRequestException("Unknown currency: USD", null));
 
       mockMvc

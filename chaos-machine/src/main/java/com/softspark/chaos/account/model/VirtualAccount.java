@@ -37,6 +37,9 @@ public class VirtualAccount extends AuditableEntity {
   @Column(name = "account_code")
   private String accountCode;
 
+  @Column(name = "account_category")
+  private String accountCategory;
+
   @Column(name = "currency", nullable = false, length = 3)
   private String currency;
 
@@ -94,6 +97,14 @@ public class VirtualAccount extends AuditableEntity {
 
   public void setAccountCode(String accountCode) {
     this.accountCode = accountCode;
+  }
+
+  public String getAccountCategory() {
+    return accountCategory;
+  }
+
+  public void setAccountCategory(String accountCategory) {
+    this.accountCategory = accountCategory;
   }
 
   public String getCurrency() {

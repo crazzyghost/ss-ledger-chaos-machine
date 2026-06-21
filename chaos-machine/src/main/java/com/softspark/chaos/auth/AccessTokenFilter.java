@@ -67,7 +67,10 @@ public class AccessTokenFilter extends OncePerRequestFilter {
             result.authorities() != null
                 ? result.authorities().stream().map(SimpleGrantedAuthority::new).toList()
                 : List.of(new SimpleGrantedAuthority("ROLE_USER"));
-        var auth = new UsernamePasswordAuthenticationToken(result.subject(), null, authorities);
+        // Retain the raw token as credentials so downstream ledger calls can forward the caller's
+        // access token via AuthenticationContext (read from the SecurityContextHolder), rather than
+        // threading it through method parameters.
+        var auth = new UsernamePasswordAuthenticationToken(result.subject(), token, authorities);
         SecurityContextHolder.getContext().setAuthentication(auth);
       }
     } catch (UnauthorizedException e) {

@@ -4,12 +4,10 @@ import com.softspark.chaos.account.dto.CreateVirtualAccountRequest;
 import com.softspark.chaos.account.dto.VirtualAccountRequestAccepted;
 import com.softspark.chaos.account.dto.VirtualAccountResponse;
 import com.softspark.chaos.account.service.VirtualAccountService;
-import com.softspark.chaos.auth.BearerToken;
 import com.softspark.chaos.base.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -54,9 +52,8 @@ public class VirtualAccountController {
               + " /api/v0/virtual-accounts once the ledger.account.created event is consumed —"
               + " poll the list for eventual consistency.")
   public ResponseEntity<VirtualAccountRequestAccepted> createVirtualAccount(
-      @Valid @RequestBody CreateVirtualAccountRequest request, HttpServletRequest httpRequest) {
-    var accepted =
-        virtualAccountService.requestCreate(request, BearerToken.fromRequest(httpRequest));
+      @Valid @RequestBody CreateVirtualAccountRequest request) {
+    var accepted = virtualAccountService.requestCreate(request);
     return ResponseEntity.status(HttpStatus.ACCEPTED).body(accepted);
   }
 

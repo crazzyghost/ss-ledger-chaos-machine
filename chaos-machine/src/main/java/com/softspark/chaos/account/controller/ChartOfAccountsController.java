@@ -5,10 +5,8 @@ import com.softspark.chaos.account.dto.ChartOfAccountsRoleResponse;
 import com.softspark.chaos.account.dto.UpdateRoleRequest;
 import com.softspark.chaos.account.enumeration.AccountRole;
 import com.softspark.chaos.account.service.ChartOfAccountsService;
-import com.softspark.chaos.auth.BearerToken;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -95,8 +93,8 @@ public class ChartOfAccountsController {
       description =
           "Re-runs account provisioning for PENDING/FAILED roles against the ledger (idempotent)."
               + " Ledger requests are authorized with the caller's bearer token.")
-  public ResponseEntity<BootstrapResult> triggerBootstrap(HttpServletRequest request) {
-    var result = chartOfAccountsService.triggerBootstrap(BearerToken.fromRequest(request));
+  public ResponseEntity<BootstrapResult> triggerBootstrap() {
+    var result = chartOfAccountsService.triggerBootstrap();
     return ResponseEntity.ok(result);
   }
 }

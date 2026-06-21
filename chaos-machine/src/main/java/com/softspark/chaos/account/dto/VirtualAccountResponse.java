@@ -19,6 +19,7 @@ import java.time.Instant;
  * @param status         the account status
  * @param channel        the channel (if any)
  * @param accountRole    the account role (if SYSTEM ownership)
+ * @param accountCategory the ledger account category (ASSET, LIABILITY, …), if known
  * @param createdVia     how the account was created
  * @param createdAt      the creation timestamp
  * @param updatedAt      the last update timestamp
@@ -33,6 +34,7 @@ public record VirtualAccountResponse(
     AccountStatus status,
     Channel channel,
     AccountRole accountRole,
+    String accountCategory,
     CreatedVia createdVia,
     Instant createdAt,
     Instant updatedAt) {}
