@@ -5,14 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import { TransactionsTab } from "@/features/transactions/transactions-page";
-import {
-  announceVirtualAccount,
-  getVirtualAccount,
-  getLedgerAccountBalances
-} from "@/lib/api";
+import { getVirtualAccount, getLedgerAccountBalances } from "@/lib/api";
 import { formatDate, formatEnumValue, formatMoney, getStatusBadgeVariant } from "@/lib/utils";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Radio } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
 function getErrorMessage(err: unknown): string {
@@ -64,13 +60,13 @@ function BalancePanel({ token, vaId }: { token: string; vaId: string }) {
         <div>
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Balance</p>
           <p className="mt-0.5 text-sm font-semibold tabular-nums">
-            {formatMoney(b.balance, b.currency)}
+            {formatMoney(b.total, b.currency)}
           </p>
         </div>
         <div>
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Available</p>
           <p className="mt-0.5 text-sm font-semibold tabular-nums">
-            {formatMoney(b.available_balance, b.currency)}
+            {formatMoney(b.available, b.currency)}
           </p>
         </div>
         <div>
@@ -84,18 +80,10 @@ function BalancePanel({ token, vaId }: { token: string; vaId: string }) {
 
 function OverviewTab({ vaId }: { vaId: string }) {
   const { token } = useSession();
-  const queryClient = useQueryClient();
 
   const query = useQuery({
     queryKey: ["virtual-account", vaId],
     queryFn: () => getVirtualAccount(token!, vaId)
-  });
-
-  const announceMutation = useMutation({
-    mutationFn: () => announceVirtualAccount(token!, vaId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["virtual-account", vaId] });
-    }
   });
 
   const va = query.data;
@@ -156,39 +144,6 @@ function OverviewTab({ vaId }: { vaId: string }) {
           ))}
         </dl>
       </div>
-
-      {/* Announce to ledger */}
-      <div className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
-        <div>
-          <p className="text-xs font-semibold">Announce to Ledger</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Publish an{" "}
-            <code className="rounded bg-muted px-1 py-0.5">organization.va.updated</code> event to
-            register this VA in the ledger.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => announceMutation.mutate()}
-          disabled={announceMutation.isPending}
-        >
-          <Radio className="mr-1.5 h-4 w-4" />
-          {announceMutation.isPending ? "Announcing…" : "Announce"}
-        </Button>
-      </div>
-      {announceMutation.isSuccess && (
-        <InlineNotice
-          title="Announced"
-          description="VA update event published to Kafka successfully."
-          tone="default"
-        />
-      )}
-      {announceMutation.isError && (
-        <InlineNotice
-          description={getErrorMessage(announceMutation.error)}
-          tone="danger"
-        />
-      )}
 
       {/* Ledger balance */}
       <BalancePanel token={token!} vaId={vaId} />

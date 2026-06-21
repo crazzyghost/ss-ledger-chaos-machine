@@ -17,10 +17,10 @@ import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import {
-  ApiError,
   listChartOfAccounts,
   listFlowConfigs,
   listVirtualAccounts,
+  triggerChartOfAccountsBootstrap,
   updateFlowConfig,
   updateRole,
   type ChartOfAccountsRoleResponse,
@@ -29,7 +29,7 @@ import {
 } from "@/lib/api";
 import { formatEnumValue } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, RefreshCw } from "lucide-react";
+import { BookOpen, Play, RefreshCw } from "lucide-react";
 import { useState } from "react";
 
 function getErrorMessage(err: unknown): string {
@@ -145,15 +145,56 @@ function RolesTab({
   vaOptions: { value: string; label: string }[];
 }) {
   const { token } = useSession();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["chart-of-accounts"],
     queryFn: () => listChartOfAccounts(token!)
+  });
+
+  const bootstrap = useMutation({
+    mutationFn: () => triggerChartOfAccountsBootstrap(token!),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["chart-of-accounts"] });
+    }
   });
 
   const roles = query.data ?? [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">
+          Roles are provisioned by requesting accounts from the ledger; each flips to{" "}
+          <span className="font-medium">PROVISIONED</span> once its{" "}
+          <code className="rounded bg-muted px-1 py-0.5">ledger.account.created</code> event is
+          consumed.
+        </p>
+        <Button onClick={() => bootstrap.mutate()} disabled={bootstrap.isPending} size="sm">
+          {bootstrap.isPending ? (
+            <>
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              Running…
+            </>
+          ) : (
+            <>
+              <Play className="mr-1.5 h-3.5 w-3.5" />
+              Run bootstrap
+            </>
+          )}
+        </Button>
+      </div>
+      {bootstrap.isSuccess && bootstrap.data && (
+        <InlineNotice
+          title="Bootstrap requested"
+          description={`Provisioned ${bootstrap.data.provisioned}, pending ${bootstrap.data.pending}, failed ${bootstrap.data.failed}.${
+            bootstrap.data.errors.length > 0 ? ` Errors: ${bootstrap.data.errors.join("; ")}` : ""
+          }`}
+          tone={bootstrap.data.failed > 0 ? "warning" : "default"}
+        />
+      )}
+      {bootstrap.isError && (
+        <InlineNotice description={getErrorMessage(bootstrap.error)} tone="danger" />
+      )}
       {query.isLoading ? (
         <TableContainer className="border-y border-border bg-card">
           <Table>

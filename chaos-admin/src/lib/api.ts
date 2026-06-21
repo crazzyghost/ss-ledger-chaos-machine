@@ -199,6 +199,13 @@ export type UpdateRoleRequest = {
   currency: string;
 };
 
+export type BootstrapResult = {
+  provisioned: number;
+  pending: number;
+  failed: number;
+  errors: string[];
+};
+
 // ---------------------------------------------------------------------------
 // Flow Config DTOs
 // ---------------------------------------------------------------------------
@@ -251,11 +258,24 @@ export type CreateVirtualAccountRequest = {
   ownershipType: string;
   currency: string;
   organizationId?: string;
-  organizationName?: string;
-  channel?: string;
-  status?: string;
-  vaId?: string;
-  announce?: boolean;
+  accountCode?: string;
+  accountCategory?: string;
+  parentAccountId?: string;
+  overdraftLimit?: number;
+  minimumBalance?: number;
+};
+
+/**
+ * Body returned with HTTP 202 when a VA creation request has been forwarded to the ledger. The VA
+ * itself materializes asynchronously once the ledger.account.created event is consumed.
+ */
+export type VirtualAccountRequestAccepted = {
+  status: string;
+  message: string;
+  accountCode: string | null;
+  organizationId: string | null;
+  currency: string;
+  ownershipType: string;
 };
 
 export type VirtualAccountFilters = {
@@ -413,11 +433,13 @@ export type LedgerAccountDto = {
 };
 
 export type LedgerBalanceDto = {
-  account_id: string;
-  balance: number;
-  available_balance: number;
+  accountId: string;
+  total: number;
+  available: number;
   currency: string;
-  updated_at: string | null;
+  pending: number;
+  reserved: number;
+  balanceAsOf: string | null;
 };
 
 export type LedgerTransactionDto = {
@@ -487,6 +509,10 @@ export function updateRole(
   });
 }
 
+export function triggerChartOfAccountsBootstrap(token: string): Promise<BootstrapResult> {
+  return request<BootstrapResult>("/chart-of-accounts/bootstrap", { token, method: "POST" });
+}
+
 export function listFlowConfigs(token: string): Promise<FlowConfigResponse[]> {
   return request<FlowConfigResponse[]>("/flow-configs", { token });
 }
@@ -527,18 +553,11 @@ export function getVirtualAccount(token: string, vaId: string): Promise<VirtualA
 export function createVirtualAccount(
   token: string,
   body: CreateVirtualAccountRequest
-): Promise<VirtualAccountResponse> {
-  return request<VirtualAccountResponse>("/virtual-accounts", {
+): Promise<VirtualAccountRequestAccepted> {
+  return request<VirtualAccountRequestAccepted>("/virtual-accounts", {
     token,
     method: "POST",
     body
-  });
-}
-
-export function announceVirtualAccount(token: string, vaId: string): Promise<void> {
-  return request<void>(`/virtual-accounts/${encodeURIComponent(vaId)}/publish`, {
-    token,
-    method: "POST"
   });
 }
 
@@ -582,7 +601,7 @@ export function getLedgerAccountBalances(
   vaId: string
 ): Promise<LedgerBalanceDto> {
   return request<LedgerBalanceDto>(
-    `/ledger/accounts/${encodeURIComponent(vaId)}/balances`,
+    `/ledger/accounts/${encodeURIComponent(vaId)}/balance`,
     { token }
   );
 }

@@ -17,8 +17,8 @@ import { Select } from "@/components/ui/select";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useSession } from "@/features/auth/session-provider";
 import {
-  ApiError,
   createVirtualAccount,
+  listCurrencies,
   listVirtualAccounts,
   type VirtualAccountFilters
 } from "@/lib/api";
@@ -29,6 +29,16 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const PER_PAGE = 20;
+const POLL_WINDOW_MS = 30_000;
+const ACCOUNT_CATEGORY_OPTIONS = [
+  { value: "", label: "Default (LIABILITY)" },
+  { value: "ASSET", label: "Asset" },
+  { value: "LIABILITY", label: "Liability" },
+  { value: "REVENUE", label: "Revenue" },
+  { value: "EXPENSE", label: "Expense" },
+  { value: "EQUITY", label: "Equity" },
+  { value: "CONTRA", label: "Contra" }
+] as const;
 
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
@@ -38,7 +48,7 @@ function getErrorMessage(err: unknown): string {
 // Create VA Dialog
 // ---------------------------------------------------------------------------
 
-function CreateVirtualAccountDialog() {
+function CreateVirtualAccountDialog({ onRequested }: { onRequested: () => void }) {
   const { token } = useSession();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -46,8 +56,8 @@ function CreateVirtualAccountDialog() {
   const [ownershipType, setOwnershipType] = useState("ORGANIZATION");
   const [currency, setCurrency] = useState("GHS");
   const [organizationId, setOrganizationId] = useState("");
-  const [channel, setChannel] = useState("");
-  const [announce, setAnnounce] = useState(false);
+  const [accountCode, setAccountCode] = useState("");
+  const [accountCategory, setAccountCategory] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   const ownershipOptions = [
@@ -55,18 +65,29 @@ function CreateVirtualAccountDialog() {
     { value: "SYSTEM", label: "System" }
   ] as const;
 
+  // Currency list (Phase 010). Degrades to a free ISO-4217 text input when unavailable/empty.
+  const currenciesQuery = useQuery({
+    queryKey: ["currencies", { perPage: 300 }],
+    queryFn: () => listCurrencies(token!, { perPage: 300 }),
+    enabled: open
+  });
+  const currencyOptions = (currenciesQuery.data?.items ?? [])
+    .filter(c => c.status === "ACTIVE")
+    .map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }));
+
   const mutation = useMutation({
     mutationFn: () =>
       createVirtualAccount(token!, {
         name: name.trim(),
         ownershipType,
         currency: currency.trim().toUpperCase(),
-        organizationId: organizationId.trim() || undefined,
-        channel: channel.trim() || undefined,
-        announce
+        organizationId: ownershipType === "ORGANIZATION" ? organizationId.trim() || undefined : undefined,
+        accountCode: ownershipType === "SYSTEM" ? accountCode.trim() || undefined : undefined,
+        accountCategory: accountCategory || undefined
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["virtual-accounts"] });
+      onRequested();
       setOpen(false);
       resetForm();
     },
@@ -78,8 +99,8 @@ function CreateVirtualAccountDialog() {
     setOwnershipType("ORGANIZATION");
     setCurrency("GHS");
     setOrganizationId("");
-    setChannel("");
-    setAnnounce(false);
+    setAccountCode("");
+    setAccountCategory("");
     setFormError(null);
   }
 
@@ -95,6 +116,10 @@ function CreateVirtualAccountDialog() {
     }
     if (ownershipType === "ORGANIZATION" && !organizationId.trim()) {
       setFormError("Organization ID is required for ORGANIZATION type accounts.");
+      return;
+    }
+    if (ownershipType === "SYSTEM" && !accountCode.trim()) {
+      setFormError("Account code is required for SYSTEM type accounts.");
       return;
     }
     mutation.mutate();
@@ -116,9 +141,10 @@ function CreateVirtualAccountDialog() {
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Create Virtual Account</DialogTitle>
+          <DialogTitle>Request Virtual Account</DialogTitle>
           <DialogDescription>
-            Register a new virtual account in the chaos machine registry.
+            The ledger owns virtual accounts. This forwards a creation request to the ledger; the
+            account appears in the registry once the ledger confirms it.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
@@ -140,12 +166,23 @@ function CreateVirtualAccountDialog() {
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-medium">Currency</label>
-            <Input
-              value={currency}
-              onChange={e => setCurrency(e.target.value.toUpperCase())}
-              placeholder="GHS"
-              maxLength={3}
-            />
+            {currencyOptions.length > 0 ? (
+              <Select
+                value={currency}
+                onChange={v => setCurrency(v)}
+                options={currencyOptions}
+                placeholder="Select currency…"
+                searchable
+                searchPlaceholder="Search currencies…"
+              />
+            ) : (
+              <Input
+                value={currency}
+                onChange={e => setCurrency(e.target.value.toUpperCase())}
+                placeholder="GHS"
+                maxLength={3}
+              />
+            )}
           </div>
           {ownershipType === "ORGANIZATION" && (
             <div className="space-y-1.5">
@@ -157,23 +194,24 @@ function CreateVirtualAccountDialog() {
               />
             </div>
           )}
+          {ownershipType === "SYSTEM" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Account Code</label>
+              <Input
+                value={accountCode}
+                onChange={e => setAccountCode(e.target.value)}
+                placeholder="e.g. ASSET.PLATFORM.FLOAT"
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
-            <label className="text-xs font-medium">Channel (optional)</label>
-            <Input
-              value={channel}
-              onChange={e => setChannel(e.target.value)}
-              placeholder="MTN, TELECEL, etc."
+            <label className="text-xs font-medium">Account Category (optional)</label>
+            <Select
+              value={accountCategory as typeof ACCOUNT_CATEGORY_OPTIONS[number]["value"]}
+              onChange={v => setAccountCategory(v)}
+              options={ACCOUNT_CATEGORY_OPTIONS}
             />
           </div>
-          <label className="flex cursor-pointer items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={announce}
-              onChange={e => setAnnounce(e.target.checked)}
-              className="rounded border-input"
-            />
-            Announce VA creation to Kafka
-          </label>
           {formError && <InlineNotice description={formError} tone="danger" />}
         </div>
         <DialogFooter>
@@ -181,7 +219,7 @@ function CreateVirtualAccountDialog() {
             Cancel
           </Button>
           <Button onClick={handleCreate} disabled={mutation.isPending}>
-            {mutation.isPending ? "Creating…" : "Create"}
+            {mutation.isPending ? "Requesting…" : "Request"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -232,6 +270,8 @@ export function VirtualAccountsPage() {
   const [page, setPage] = useState(0);
   const [draft, setDraft] = useState<Filters>(INITIAL_FILTERS);
   const [applied, setApplied] = useState<Filters>(INITIAL_FILTERS);
+  // After requesting a VA, briefly poll the list so the async projection surfaces it.
+  const [pollUntil, setPollUntil] = useState(0);
 
   const filters: VirtualAccountFilters = {
     page,
@@ -244,8 +284,11 @@ export function VirtualAccountsPage() {
 
   const query = useQuery({
     queryKey: ["virtual-accounts", filters],
-    queryFn: () => listVirtualAccounts(token!, filters)
+    queryFn: () => listVirtualAccounts(token!, filters),
+    refetchInterval: () => (Date.now() < pollUntil ? 3000 : false)
   });
+
+  const isPolling = Date.now() < pollUntil;
 
   const accounts = query.data?.items ?? [];
   const total = query.data?.total ?? 0;
@@ -266,8 +309,12 @@ export function VirtualAccountsPage() {
     <Page>
       <PageHeader
         title="Virtual Accounts"
-        description="Browse and create virtual accounts in the chaos machine registry."
-        actions={<CreateVirtualAccountDialog />}
+        description="Browse and request virtual accounts. The ledger owns VAs; new ones appear once confirmed."
+        actions={
+          <CreateVirtualAccountDialog
+            onRequested={() => setPollUntil(Date.now() + POLL_WINDOW_MS)}
+          />
+        }
       />
       <PageContent className="min-h-full grid-rows-[minmax(0,1fr)] px-0 py-0 md:px-0 md:py-0">
         <div className="flex min-h-0 flex-col">
@@ -311,6 +358,13 @@ export function VirtualAccountsPage() {
 
           {/* Table */}
           <div className="flex min-h-0 flex-1 flex-col gap-4 px-6 py-4 md:px-8">
+            {isPolling && (
+              <InlineNotice
+                title="Account requested"
+                description="The request was forwarded to the ledger. The account will appear here once the ledger.account.created event is consumed — refreshing automatically."
+                tone="default"
+              />
+            )}
             {query.isLoading ? (
               <TableContainer className="flex-1 border-y border-border bg-card">
                 <Table>
