@@ -731,7 +731,7 @@ export function getAccountTransactionHistory(
   filters: AccountTransactionHistoryFilters = {}
 ): Promise<CursorPage<LedgerTransactionHistoryRecord>> {
   return request<CursorPage<LedgerTransactionHistoryRecord>>(
-    `/ledger/accounts/${encodeURIComponent(accountId)}/transaction-history`,
+    `/ledger/accounts/${encodeURIComponent(accountId)}/transactions`,
     { token, query: { ...filters } }
   );
 }

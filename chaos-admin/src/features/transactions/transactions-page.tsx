@@ -530,7 +530,7 @@ const HISTORY_COLUMNS = (
 
 /**
  * The correct per-VA ledger history view: reads from the ledger's cursor-paginated
- * `/accounts/{id}/transaction-history` endpoint. Pages are walked forward/back via opaque cursors
+ * `/accounts/{id}/transactions` endpoint. Pages are walked forward/back via opaque cursors
  * (the endpoint has no offset/total), so we keep a stack of the cursors that opened each page.
  * Supports the full filter set the endpoint exposes (ref / entry type / direction / date range) and
  * a row click navigates to the transaction detail page.
