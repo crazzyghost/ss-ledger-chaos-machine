@@ -134,7 +134,7 @@ public class LedgerReadController {
    * @param request the HTTP request
    * @return a cursor page of transaction-history records
    */
-  @GetMapping("/accounts/{id}/transaction-history")
+  @GetMapping("/accounts/{id}/transactions")
   @Operation(
       summary = "Get account transaction history",
       description = "Proxy to the ledger's cursor-paginated account transaction history")

@@ -9,7 +9,7 @@ import java.util.List;
  * DTO mirroring the ledger's account transaction-history record (one {@code journal_entry_lines}
  * row enriched with parent-entry header fields and counterparty legs).
  *
- * <p>Returned per row by {@code GET /api/v0/accounts/{id}/transaction-history}. Field names match
+ * <p>Returned per row by {@code GET /api/v0/accounts/{id}/transactions}. Field names match
  * the ledger's camelCase {@code JournalEntryHistoryRecordDto}; unknown fields are ignored so the
  * proxy stays forward-compatible as the ledger evolves its shape.
  *

@@ -234,7 +234,7 @@ public class LedgerClient {
   /**
    * Fetches a single cursor page of an account's transaction history from the ledger.
    *
-   * <p>Proxies the ledger's {@code GET /api/v0/accounts/{id}/transaction-history} endpoint, which
+   * <p>Proxies the ledger's {@code GET /api/v0/accounts/{id}/transactions} endpoint, which
    * is keyset (cursor) paginated rather than offset paginated. The ledger rejects {@code page}
    * params on this endpoint, so callers walk pages via the returned {@code nextCursor} /
    * {@code previousCursor}.
@@ -270,10 +270,11 @@ public class LedgerClient {
                 .uri(
                     uriBuilder -> {
                       var builder =
-                          uriBuilder.path("/api/v0/accounts/{id}/transaction-history");
+                          uriBuilder.path("/api/v0/accounts/{id}/transactions");
                       if (from != null) builder = builder.queryParam("from", from);
                       if (to != null) builder = builder.queryParam("to", to);
                       if (entryType != null) builder = builder.queryParam("entryType", entryType);
+                      if (entryType != null) builder = builder.queryParam("entryLineType", entryType);
                       if (direction != null) builder = builder.queryParam("direction", direction);
                       if (transactionRef != null)
                         builder = builder.queryParam("transactionRef", transactionRef);

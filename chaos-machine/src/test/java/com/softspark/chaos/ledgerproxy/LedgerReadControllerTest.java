@@ -109,7 +109,7 @@ class LedgerReadControllerTest {
   }
 
   @Nested
-  @DisplayName("GET /api/v0/ledger/accounts/{id}/transaction-history")
+  @DisplayName("GET /api/v0/ledger/accounts/{id}/transactions")
   class GetTransactionHistory {
 
     private LedgerTransactionHistoryDto sampleRecord() {
@@ -146,7 +146,7 @@ class LedgerReadControllerTest {
 
       mockMvc
           .perform(
-              get("/api/v0/ledger/accounts/acct-1/transaction-history")
+              get("/api/v0/ledger/accounts/acct-1/transactions")
                   .accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.items[0].lineId").value("line-1"))
@@ -165,7 +165,7 @@ class LedgerReadControllerTest {
 
       mockMvc
           .perform(
-              get("/api/v0/ledger/accounts/acct-1/transaction-history")
+              get("/api/v0/ledger/accounts/acct-1/transactions")
                   .accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isInternalServerError())
           .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
