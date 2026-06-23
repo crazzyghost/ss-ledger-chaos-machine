@@ -1,0 +1,7 @@
+- NTimesOptions chaos strategy
+- supports running a flow N times 
+- different from burst in that it is not a duplicate event
+  - it runs the flow N times against the same source destination faccounts
+- supports a burst config (different events of the same transfer)
+- supports a linear config (different events of the same transfer but with a fixed delay in between)
+- supports a random config (different events of the same transfer but with random delay between them)

@@ -92,12 +92,18 @@ com.softspark.chaos
 │   └── outbox        # OutboxEvent entity + polling relay → organization.onboarded (incl. currency {id,code})
 ├── flow              # transaction flow engine
 │   ├── controller / dto / service / model(payloads v1) / chaos / registry
+│   └── chaos         # duplicate/outOfOrder/malformed/unbalanced/burst/delay
+│                     #   + Phase 013: NTimesOptions (Pacing/ExecutionMode) + NTimesExpander
+│                     #   (1 request → N distinct requests) for the /flows/{type}/n-times route
 ├── batch             # CSV ingest + batch run execution
 │   ├── controller / dto / service / model / repository / csv
+│                     # Phase 013: batch_run gains a `kind` (CSV | N_TIMES) discriminator so the
+│                     #   reused runner/tables also track async N-Times runs (pacing/mode columns)
 ├── history           # publish records + query API
 │   ├── controller / dto / service / model / repository
 ├── auth              # login proxy + AccessTokenFilter + TokenVerifier (AUTH SERVICE)
-└── ledgerproxy       # RestClient read-through to ss-ledger-service
+└── ledgerproxy       # RestClient read-through to ss-ledger-service (accounts, transactions,
+                      #   + Phase 012: reporting/trial-balance via LedgerReadController + LedgerClient)
 ```
 
 ## 5. Frontend module map (`src/`, follows swift-admin)
@@ -115,7 +121,9 @@ src
     ├── chart-of-accounts
     ├── virtual-accounts   # list, create, detail (+ per-VA transactions)
     ├── transactions       # search by VA id + filters
-    └── chaos              # single flow runner + CSV upload + run results
+    ├── trial-balance      # Phase 012: read-only trial-balance report (period + currency filters, totals, per-account table)
+    └── chaos              # Single Flow Run (radio + catalog-driven form + chaos widget) + CSV upload + run results
+                           #   Phase 011: transaction-type-form, va-picker, chaos-options-panel (two-column)
 ```
 
 ## 6. The 12 ledger flows (event surface the chaos machine drives)
@@ -184,12 +192,27 @@ config-seeded approach of Phase 002 / task 001.)
 | 008 | [Organization Onboarding](phases/008-organization-onboarding/DESIGN.md) | Countries + org types master data, organization onboarding API, transactional outbox publishing `organization.onboarded` |
 | 009 | [Ledger-Owned Virtual Accounts](phases/009-ledger-owned-virtual-accounts/DESIGN.md) | The ledger owns VAs; chaos's **first Kafka consumer** projects `ledger.account.created` into the VA registry; VA-create API + CoA bootstrap become HTTP-only/non-blocking; manual CoA trigger in UI (supersedes VA ownership of 002/004 + sync persistence of 007) |
 | 010 | [Currencies & Supported Countries](phases/010-currencies-and-supported-countries/DESIGN.md) | Managed `currency` table (seeded + manual), `country.primary_currency`, separate `supported_country` table driving the onboarding form, `organization.onboarded` carries `currency {id, code}` |
+| 011 | [Single Flow Run Redesign](phases/011-single-flow-run-redesign/DESIGN.md) | Reworks the chaos Single-Flow runner into **Single Flow Run**: nav rename, **radio** of 5 transaction types (drops onboarded + va-updated; settlement/collection/disbursement deferred), two-column layout (form left / chaos right), field-descriptor catalog (`fields[]` + `runnerVisible`), required-shown/advanced-collapsed form, autogen UUID request ids, account-kind VA pickers, **client-side** org/currency/tenant inference ([ADR-014](decisions/014-flow-catalog-field-descriptors-and-client-side-inference.md)) |
+| 012 | [Trial Balance Reporting](phases/012-trial-balance-reporting/DESIGN.md) | Adds a **Trial Balance** nav item + read-only report page (period + currency filters, debit/credit totals, balanced indicator, per-account breakdown), backed by a thin read-proxy of the ledger's `GET /api/v0/reporting/trial-balance` exposed as `GET /api/v0/ledger/reporting/trial-balance` — reusing the existing ledger proxy machinery; no new tables/Kafka ([ADR-015](decisions/015-trial-balance-via-ledger-read-proxy.md)) |
+| 013 | [N-Times Chaos Strategy](phases/013-n-times-chaos-strategy/DESIGN.md) | Adds an **N Times** chaos strategy: run a flow N times against the **same** source/destination accounts as N **distinct** transactions (fresh event id → idempotency key + fresh payload `*_request_id` per iteration, shared correlation id) — *distinct from* the duplicate-keyed **Burst**. Three pacings (BURST/LINEAR/RANDOM) and two execution modes: **SYNC** (in-line, sequential, capped) and **ASYNC** (run-tracked, reusing the Phase 003 batch runner; BURST fans out concurrently). Dedicated `POST /api/v0/flows/{flowType}/n-times`; reuses the `autogen` descriptors and the batch run tables behind a `kind` discriminator ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strategy.md)) |
 
-Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)**.
+Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013**.
 Phase 007 (formerly `025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies
 phases 001–007. Phases 009 and 010 are the latest increment (idea `002_countries_va_via_kafka.md`)
 and run largely in parallel — they converge where the org-VA create form (009) consumes the
-`currency` table (010); their tests fold back into the 006 suites.
+`currency` table (010); their tests fold back into the 006 suites. Phase 011 (idea
+`004_single_flow_run.md`) is a UX-focused redesign of the Phase 003/005 single-flow runner: an
+additive field-descriptor catalog ([ADR-014](decisions/014-flow-catalog-field-descriptors-and-client-side-inference.md))
+plus a reworked frontend; it changes no Kafka surface, table, or publish contract. Phase 012
+(idea `005_trial_balance.md`) adds the **Trial Balance** report: a read-only page over a thin
+read-proxy of the ledger's reporting endpoint — additive within the existing `ledgerproxy`
+package ([ADR-015](decisions/015-trial-balance-via-ledger-read-proxy.md)), no new tables, Kafka,
+or persistence. Phase 013 (idea `006_N_TIMES_chaos_strategy.md`) adds the **N Times** chaos
+strategy — N *distinct* transactions between the same accounts (vs Burst's duplicate event) — in
+the `flow.chaos` package, with a SYNC in-line path and an ASYNC path that **reuses the Phase 003
+batch runner / run tables** behind a `kind` discriminator (one additive Flyway migration); it
+reuses the Phase 011 `autogen` descriptors for per-iteration id re-rolling and changes no ledger
+flow contract ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strategy.md)).
 
 ## 9. Cross-cutting non-functional posture
 

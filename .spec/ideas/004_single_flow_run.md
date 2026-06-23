@@ -1,0 +1,66 @@
+- Rename the Side Navs
+- Single Flow -> Single Flow Run
+- Remove these options from flows (organization onboarded, organization va updated)
+- Transaction type selection (Selectable via a radio button - NOT via a drop-down)
+    - Options (default - Top-up)
+        - Top-up
+        - Inter VA Transfers
+        - Treasury Sweep
+        - Treasury Prefund
+        - Treasury Transfer
+- Chaos Options
+    - Widget displays on the right of the screen, separate from the transaction type form
+    - houses chaos options
+- Transaction type forms
+    - Widget displays on the left of the screen
+    - Renders based on transaction type
+    - All required fields (though prefilled) show by default
+        - Needs input
+    - Non-required fields (though generated or prefilled) are collapsed by default
+        - Needs input but can be inferred
+        - These fields are always non required
+        - Correlation Id
+        - Idempotency Key
+        - Tenant Id (Inferred from source if type is ORGANIZATION)
+    - Top-up
+        - Required
+            - Transaction Request ID (i.e topup_request_id) (autogen UUID)
+            - Source VA ID (Organization Account)
+            - Destination VA ID (System Account)
+            - Amount (Default 1000.0000)
+        - Non Required
+            - Organization ID (prefilled based on Source VA ID)
+            - Currency (inferred from source)
+            - Source Payment Reference
+            - Approved By
+            - Approved At
+    - Inter VA Transfer
+        - Required
+            - Transaction Request ID (i.e transfer_request_id) (autogen UUID)
+            - Source VA ID (Organization Account)
+            - Destination VA ID (Organization Account)
+            - Amount (Default 1000.0000)
+        - Non Required
+            - Source Organization ID (prefilled based on Source VA ID)
+            - Destination Organization ID (prefilled based on Destination VA ID)
+            - Currency (inferred from source)
+            - Source Payment Reference
+            - Initiated By
+            - Initiated At
+    - Treasury (SWEEP/TRANSFER/PREFUND)
+        - Required
+            - Transaction Request ID (i.e (sweep|prefund|transfer)_request_id) (autogen UUID)
+            - Source VA ID (System Account)
+            - Destination VA ID (System Account)
+            - Amount (Default 1000.0000)
+        - Non Required
+            - Source Organization ID (prefilled based on Source VA ID)
+            - Destination Organization ID (prefilled based on Destination VA ID)
+            - Source Channel (Prefund - [src:bank,dest:momo], Sweep - [src:momo, dest:bank],
+              Transfer - [src:momo, dest:momo])
+            - Destination Channel (Prefund - [src:bank,dest:momo], Sweep - [src:momo, dest:bank],
+              Transfer - [src:momo, dest:momo])
+            - Currency (inferred from source)
+            - Completion Reference
+            - Initiated By
+            - Initiated At
