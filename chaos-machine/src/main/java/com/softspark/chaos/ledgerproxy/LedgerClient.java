@@ -11,7 +11,9 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import jakarta.annotation.Nullable;
+import java.time.Instant;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
@@ -269,12 +271,12 @@ public class LedgerClient {
                 .get()
                 .uri(
                     uriBuilder -> {
-                      var builder =
-                          uriBuilder.path("/api/v0/accounts/{id}/transactions");
+                      var builder = uriBuilder.path("/api/v0/accounts/{id}/transactions");
                       if (from != null) builder = builder.queryParam("from", from);
                       if (to != null) builder = builder.queryParam("to", to);
                       if (entryType != null) builder = builder.queryParam("entryType", entryType);
-                      if (entryType != null) builder = builder.queryParam("entryLineType", entryType);
+                      if (entryType != null)
+                        builder = builder.queryParam("entryLineType", entryType);
                       if (direction != null) builder = builder.queryParam("direction", direction);
                       if (transactionRef != null)
                         builder = builder.queryParam("transactionRef", transactionRef);
@@ -338,6 +340,60 @@ public class LedgerClient {
                 .body(
                     new ParameterizedTypeReference<
                         LedgerPageDto<LedgerTransactionReferenceDto>>() {}));
+  }
+
+  /**
+   * Fetches the unadjusted trial balance for a period from the ledger.
+   *
+   * <p>Proxies the ledger's {@code GET /api/v0/reporting/trial-balance} endpoint, which computes the
+   * report authoritatively. The chaos machine forwards the period (and optional currency scope)
+   * verbatim and passes the response through unchanged (ADR-015). Period validation
+   * ({@code from < to}, span &le; 366 days) stays with the ledger; a {@code 400} it returns is
+   * translated to a {@link NotFoundException} like every other 4xx on this proxy.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param from the inclusive start of the period (ISO-8601 instant)
+   * @param to the exclusive end of the period (ISO-8601 instant)
+   * @param currency optional ISO-4217 currency scope; {@code null}/blank reports all currencies
+   * @return the trial-balance report
+   * @throws NotFoundException if the ledger returns 4xx (e.g. {@code from >= to}, span &gt; 366 days)
+   * @throws InternalServerErrorException if the ledger returns 5xx
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public TrialBalanceDto getTrialBalance(
+      String callerToken, Instant from, Instant to, @Nullable String currency) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri(
+                    uriBuilder -> {
+                      var builder =
+                          uriBuilder
+                              .path("/api/v0/reporting/trial-balance")
+                              .queryParam("from", from)
+                              .queryParam("to", to);
+                      if (currency != null && !currency.isBlank()) {
+                        builder = builder.queryParam("currency", currency);
+                      }
+                      return builder.build();
+                    })
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::is4xxClientError,
+                    (req, resp) -> {
+                      throw new NotFoundException(
+                          "Ledger returned: " + resp.getStatusCode().value());
+                    })
+                .onStatus(
+                    HttpStatusCode::is5xxServerError,
+                    (req, resp) -> {
+                      throw new InternalServerErrorException(
+                          "Ledger error: " + resp.getStatusCode().value());
+                    })
+                .body(TrialBalanceDto.class));
   }
 
   private String resolveToken(String callerToken) {

@@ -11,10 +11,12 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -138,16 +140,17 @@ public class LedgerReadController {
   @Operation(
       summary = "Get account transaction history",
       description = "Proxy to the ledger's cursor-paginated account transaction history")
-  public ResponseEntity<CursorPageResponse<LedgerTransactionHistoryDto>> getAccountTransactionHistory(
-      @PathVariable String id,
-      @RequestParam(required = false) String from,
-      @RequestParam(required = false) String to,
-      @RequestParam(required = false) String entryType,
-      @RequestParam(required = false) String direction,
-      @RequestParam(required = false) String transactionRef,
-      @RequestParam(required = false) String cursor,
-      @RequestParam(required = false) Integer size,
-      HttpServletRequest request) {
+  public ResponseEntity<CursorPageResponse<LedgerTransactionHistoryDto>>
+      getAccountTransactionHistory(
+          @PathVariable String id,
+          @RequestParam(required = false) String from,
+          @RequestParam(required = false) String to,
+          @RequestParam(required = false) String entryType,
+          @RequestParam(required = false) String direction,
+          @RequestParam(required = false) String transactionRef,
+          @RequestParam(required = false) String cursor,
+          @RequestParam(required = false) Integer size,
+          HttpServletRequest request) {
     var token = extractToken(request);
     try {
       var result =
@@ -213,6 +216,38 @@ public class LedgerReadController {
     var token = extractToken(request);
     try {
       return ResponseEntity.ok(toPageResponse(ledgerClient.getTransactionByReference(token, ref)));
+    } catch (CircuitBreakerOpenException e) {
+      throw new InternalServerErrorException("Ledger service temporarily unavailable");
+    }
+  }
+
+  /**
+   * Returns the ledger's unadjusted trial balance for a period (read-through to the ledger).
+   *
+   * <p>Read-proxies the ledger's authoritative {@code GET /api/v0/reporting/trial-balance} report
+   * (ADR-015). The period bounds bind directly to {@link Instant} via Spring's default ISO-8601
+   * conversion; {@code to} is an exclusive upper bound. Period validity ({@code from < to}, span
+   * &le; 366 days) is enforced by the ledger — its {@code 400} surfaces as the standard chaos 4xx
+   * error rather than being re-validated here.
+   *
+   * @param from the inclusive start of the period (required, ISO-8601 instant)
+   * @param to the exclusive end of the period (required, ISO-8601 instant)
+   * @param currency optional ISO-4217 currency scope; omitted reports all currencies
+   * @param request the HTTP request (for token extraction)
+   * @return the trial-balance report
+   */
+  @GetMapping("/reporting/trial-balance")
+  @Operation(
+      summary = "Trial balance for a period",
+      description = "Read-through to the ledger's unadjusted trial-balance report")
+  public ResponseEntity<TrialBalanceDto> getTrialBalance(
+      @RequestParam Instant from,
+      @RequestParam Instant to,
+      @RequestParam(required = false) String currency,
+      HttpServletRequest request) {
+    var token = extractToken(request);
+    try {
+      return ResponseEntity.ok(ledgerClient.getTrialBalance(token, from, to, currency));
     } catch (CircuitBreakerOpenException e) {
       throw new InternalServerErrorException("Ledger service temporarily unavailable");
     }

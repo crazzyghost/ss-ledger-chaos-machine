@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -61,6 +62,28 @@ public class GlobalExceptionHandler {
             .map(cv -> new ErrorDescription(cv.getPropertyPath().toString(), cv.getMessage()))
             .toList();
     ApiError error = new ApiError(requestId, "Validation failed", errors);
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
+  }
+
+  /**
+   * Handles {@link MissingServletRequestParameterException} thrown when a required {@code
+   * @RequestParam} is absent (e.g. the trial-balance endpoint called without {@code from}/{@code
+   * to}). Returns 400 so a missing-parameter client error is not swallowed by the generic 500
+   * handler below — matching standard Spring MVC semantics.
+   *
+   * @param ex the missing-parameter exception
+   * @param request the current HTTP request
+   * @return a 400 Bad Request response containing an {@link ApiError}
+   */
+  @ExceptionHandler(MissingServletRequestParameterException.class)
+  public ResponseEntity<ApiError> handleMissingRequestParameter(
+      MissingServletRequestParameterException ex, HttpServletRequest request) {
+    String requestId = getRequestId();
+    ApiError error =
+        new ApiError(
+            requestId,
+            ex.getMessage(),
+            List.of(new ErrorDescription(ex.getParameterName(), "Required parameter is missing")));
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(error);
   }
 

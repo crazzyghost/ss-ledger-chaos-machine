@@ -3,7 +3,9 @@ package com.softspark.chaos.ledgerproxy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,11 +19,15 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
+import com.softspark.chaos.ledgerproxy.dto.TrialBalanceEntryDto;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -138,16 +144,14 @@ class LedgerReadControllerTest {
     @WithMockUser
     @DisplayName("returns 200 with cursor page of history records")
     void returns200WithCursorPage() throws Exception {
-      var page =
-          new LedgerCursorPageDto<>(List.of(sampleRecord()), "next-cursor", null, true, 20);
+      var page = new LedgerCursorPageDto<>(List.of(sampleRecord()), "next-cursor", null, true, 20);
       when(ledgerClient.getAccountTransactionHistory(
               any(), anyString(), any(), any(), any(), any(), any(), any(), any()))
           .thenReturn(page);
 
       mockMvc
           .perform(
-              get("/api/v0/ledger/accounts/acct-1/transactions")
-                  .accept(MediaType.APPLICATION_JSON))
+              get("/api/v0/ledger/accounts/acct-1/transactions").accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.items[0].lineId").value("line-1"))
           .andExpect(jsonPath("$.items[0].direction").value("CREDIT"))
@@ -165,8 +169,7 @@ class LedgerReadControllerTest {
 
       mockMvc
           .perform(
-              get("/api/v0/ledger/accounts/acct-1/transactions")
-                  .accept(MediaType.APPLICATION_JSON))
+              get("/api/v0/ledger/accounts/acct-1/transactions").accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isInternalServerError())
           .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
     }
@@ -207,8 +210,7 @@ class LedgerReadControllerTest {
       when(ledgerClient.getTransactionByReference(any(), anyString())).thenReturn(page);
 
       mockMvc
-          .perform(
-              get("/api/v0/ledger/transactions/ref-1").accept(MediaType.APPLICATION_JSON))
+          .perform(get("/api/v0/ledger/transactions/ref-1").accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.items[0].lineId").value("line-1"))
           .andExpect(jsonPath("$.items[0].transactionRef").value("ref-1"))
@@ -223,8 +225,115 @@ class LedgerReadControllerTest {
           .thenThrow(new CircuitBreakerOpenException("OPEN"));
 
       mockMvc
+          .perform(get("/api/v0/ledger/transactions/ref-1").accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isInternalServerError())
+          .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
+    }
+  }
+
+  @Nested
+  @DisplayName("GET /api/v0/ledger/reporting/trial-balance")
+  class GetTrialBalance {
+
+    private static final String FROM = "2026-06-01T00:00:00Z";
+    private static final String TO = "2026-07-01T00:00:00Z";
+
+    private TrialBalanceDto sampleReport() {
+      return new TrialBalanceDto(
+          Instant.parse(FROM),
+          Instant.parse(TO),
+          "GHS",
+          new BigDecimal("100.00"),
+          new BigDecimal("100.00"),
+          true,
+          1,
+          List.of(
+              new TrialBalanceEntryDto(
+                  "acct-1",
+                  "ASSET.PLATFORM.FLOAT",
+                  "Platform Float",
+                  null,
+                  "SYSTEM",
+                  "GHS",
+                  new BigDecimal("100.00"),
+                  new BigDecimal("0.00"),
+                  new BigDecimal("100.00"))));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("returns 200 with the trial-balance report and forwards the period")
+    void returns200WithReport() throws Exception {
+      when(ledgerClient.getTrialBalance(any(), any(), any(), any())).thenReturn(sampleReport());
+
+      mockMvc
           .perform(
-              get("/api/v0/ledger/transactions/ref-1").accept(MediaType.APPLICATION_JSON))
+              get("/api/v0/ledger/reporting/trial-balance")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.currency").value("GHS"))
+          .andExpect(jsonPath("$.isBalanced").value(true))
+          .andExpect(jsonPath("$.numberOfAccounts").value(1))
+          .andExpect(jsonPath("$.totalDebits").value("100.00"))
+          .andExpect(jsonPath("$.accounts[0].accountCode").value("ASSET.PLATFORM.FLOAT"))
+          .andExpect(jsonPath("$.accounts[0].accountOwnershipType").value("SYSTEM"))
+          .andExpect(jsonPath("$.accounts[0].accountOwnerId").doesNotExist());
+
+      var fromCaptor = ArgumentCaptor.forClass(Instant.class);
+      var toCaptor = ArgumentCaptor.forClass(Instant.class);
+      verify(ledgerClient)
+          .getTrialBalance(any(), fromCaptor.capture(), toCaptor.capture(), isNull());
+      org.assertj.core.api.Assertions.assertThat(fromCaptor.getValue())
+          .isEqualTo(Instant.parse(FROM));
+      org.assertj.core.api.Assertions.assertThat(toCaptor.getValue()).isEqualTo(Instant.parse(TO));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("forwards the currency query param when present")
+    void forwardsCurrency() throws Exception {
+      when(ledgerClient.getTrialBalance(any(), any(), any(), eq("GHS"))).thenReturn(sampleReport());
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/trial-balance")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .param("currency", "GHS")
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.currency").value("GHS"));
+
+      verify(ledgerClient).getTrialBalance(any(), any(), any(), eq("GHS"));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("missing required 'from'/'to' yields 400 before any ledger call")
+    void missingParams_returns400() throws Exception {
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/trial-balance")
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("circuit breaker open returns 500")
+    void circuitBreakerOpen_returns500() throws Exception {
+      when(ledgerClient.getTrialBalance(any(), any(), any(), any()))
+          .thenThrow(new CircuitBreakerOpenException("OPEN"));
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/trial-balance")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isInternalServerError())
           .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
     }
