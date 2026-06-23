@@ -24,7 +24,7 @@ type NavItem = {
 };
 
 const operateNavigation: NavItem[] = [
-  { to: "/chaos/single-flow", label: "Single Flow", icon: Play },
+  { to: "/chaos/single-flow", label: "Single Flow Run", icon: Play },
   { to: "/chaos/batches", label: "Batches", icon: LayersIcon }
 ];
 

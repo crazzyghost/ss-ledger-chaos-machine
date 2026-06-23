@@ -340,10 +340,36 @@ export type HistoryFilters = {
 // Flow DTOs
 // ---------------------------------------------------------------------------
 
+export type FieldKind = "TEXT" | "UUID" | "AMOUNT" | "DATETIME" | "SELECT" | "VA_REF";
+export type AutogenRule = "NONE" | "UUID_V4";
+export type InferenceRule =
+  | "NONE"
+  | "ORG_FROM_SOURCE_VA"
+  | "ORG_FROM_DEST_VA"
+  | "CURRENCY_FROM_SOURCE_VA"
+  | "TENANT_FROM_SOURCE_VA";
+export type AccountKind = "ORGANIZATION" | "SYSTEM";
+
+export type FlowFieldDescriptor = {
+  name: string;
+  label: string;
+  kind: FieldKind;
+  required: boolean;
+  advanced: boolean;
+  defaultValue: string | null;
+  autogen: AutogenRule;
+  inference: InferenceRule;
+  accountKind: AccountKind | null;
+  slotName: string | null;
+  options: string[] | null;
+};
+
 export type FlowCatalogEntry = {
   flowType: string;
   topic: string;
   source: string;
+  runnerVisible: boolean;
+  fields: FlowFieldDescriptor[];
   requiredFields: string[];
   optionalFields: string[];
   csvColumns: string[];
