@@ -12,6 +12,7 @@ import {
   LayersIcon,
   LogOut,
   Play,
+  Scale,
   Tags,
   Wallet
 } from "lucide-react";
@@ -42,7 +43,8 @@ const organizationsNavigation: NavItem[] = [
 ];
 
 const ledgerNavigation: NavItem[] = [
-  { to: "/transactions", label: "Transactions", icon: FileText }
+  { to: "/transactions", label: "Transactions", icon: FileText },
+  { to: "/trial-balance", label: "Trial Balance", icon: Scale }
 ];
 
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {

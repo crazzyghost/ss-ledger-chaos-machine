@@ -577,6 +577,35 @@ export type LedgerTransactionReferenceRecord = {
   accountSequence: number;
 };
 
+// One per-account row of the trial balance. Mirrors the ledger's camelCase TrialBalanceEntry,
+// passed through by the proxy. Money fields arrive as BigDecimal → string over the wire; format
+// them with `formatMoney` (which accepts strings) rather than parsing to a number, to avoid drift.
+export type TrialBalanceEntry = {
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  accountOwnerId: string | null;
+  accountOwnershipType: "SYSTEM" | "ORGANIZATION" | string;
+  currency: string;
+  totalDebits: string;
+  totalCredits: string;
+  netMovement: string;
+};
+
+// The unadjusted trial balance for a period. Mirrors the ledger's TrialBalanceResponse, read-proxied
+// through the chaos gateway (`GET /ledger/reporting/trial-balance`). `to` is an exclusive upper
+// bound; `currency` is null when the report aggregates all currencies.
+export type TrialBalanceResponse = {
+  from: string;
+  to: string;
+  currency: string | null;
+  totalDebits: string;
+  totalCredits: string;
+  isBalanced: boolean;
+  numberOfAccounts: number;
+  accounts: TrialBalanceEntry[];
+};
+
 // ---------------------------------------------------------------------------
 // API functions — Auth
 // ---------------------------------------------------------------------------
@@ -772,6 +801,19 @@ export function getTransactionByReference(
     `/ledger/transactions/${encodeURIComponent(ref)}`,
     { token }
   );
+}
+
+// Fetches the ledger's unadjusted trial balance for a period (read-proxied through the chaos
+// gateway). `from`/`to` are ISO-8601 instants with `to` exclusive; an absent/empty `currency`
+// aggregates all currencies.
+export function getTrialBalance(
+  token: string,
+  params: { from: string; to: string; currency?: string }
+): Promise<TrialBalanceResponse> {
+  return request<TrialBalanceResponse>("/ledger/reporting/trial-balance", {
+    token,
+    query: { from: params.from, to: params.to, currency: params.currency || undefined }
+  });
 }
 
 // ---------------------------------------------------------------------------

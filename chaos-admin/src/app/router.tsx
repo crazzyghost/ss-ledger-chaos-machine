@@ -31,6 +31,11 @@ const TransactionDetailPage = lazy(() =>
     default: m.TransactionDetailPage
   }))
 );
+const TrialBalancePage = lazy(() =>
+  import("@/features/trial-balance/trial-balance-page").then(m => ({
+    default: m.TrialBalancePage
+  }))
+);
 const SingleFlowPage = lazy(() =>
   import("@/features/chaos/single-flow-page").then(m => ({ default: m.SingleFlowPage }))
 );
@@ -160,6 +165,10 @@ export const router = createBrowserRouter([
           {
             path: "/transactions/:ref",
             element: withSuspense(<TransactionDetailPage />)
+          },
+          {
+            path: "/trial-balance",
+            element: withSuspense(<TrialBalancePage />)
           }
         ]
       }
