@@ -53,6 +53,22 @@ chaos:
       - flowType: TOPUP_CONFIRMED
         slotName: destination
         accountRole: PLATFORM_FLOAT
+      # Organization-account source: no role — resolved only from the request's slotOverrides
+      # (the Single Flow Run form supplies the operator-picked organization VA).
+      - flowType: TOPUP_CONFIRMED
+        slotName: source
+      # Inter-VA transfer: both ends are organization accounts (no role; request-supplied).
+      - flowType: TRANSFER_REQUESTED
+        slotName: source
+      - flowType: TRANSFER_REQUESTED
+        slotName: destination
+      # Treasury transfer (momo -> momo): both ends are system float accounts.
+      - flowType: TREASURY_TRANSFER_COMPLETED
+        slotName: source
+        accountRole: PLATFORM_FLOAT_MTN
+      - flowType: TREASURY_TRANSFER_COMPLETED
+        slotName: destination
+        accountRole: PLATFORM_FLOAT_TELECEL
       - flowType: TREASURY_PREFUND_COMPLETED
         slotName: source
         accountRole: SETTLEMENT_ACCOUNT
