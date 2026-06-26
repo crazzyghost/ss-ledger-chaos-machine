@@ -117,9 +117,12 @@ class ReferenceDataSeederTest {
               List.of(
                   country("Ghana", "GH", ghanaCurrencies),
                   country("Bhutan", "BT", bhutanCurrencies)));
-      when(currencyService.upsertIfAbsent(eq("GHS"), any(), any())).thenReturn(currency("c-ghs", "GHS"));
-      when(currencyService.upsertIfAbsent(eq("BTN"), any(), any())).thenReturn(currency("c-btn", "BTN"));
-      when(currencyService.upsertIfAbsent(eq("INR"), any(), any())).thenReturn(currency("c-inr", "INR"));
+      when(currencyService.upsertIfAbsent(eq("GHS"), any(), any()))
+          .thenReturn(currency("c-ghs", "GHS"));
+      when(currencyService.upsertIfAbsent(eq("BTN"), any(), any()))
+          .thenReturn(currency("c-btn", "BTN"));
+      when(currencyService.upsertIfAbsent(eq("INR"), any(), any()))
+          .thenReturn(currency("c-inr", "INR"));
 
       var summary = seeder.seedIfNeeded(SeedPolicy.ALWAYS);
 

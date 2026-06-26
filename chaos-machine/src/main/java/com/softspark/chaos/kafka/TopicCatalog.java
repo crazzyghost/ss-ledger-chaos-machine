@@ -26,7 +26,9 @@ public class TopicCatalog {
   private String organizationVaSettlementCompleted = "organization.va.settlement.completed";
   private String organizationVaSettlementFailed = "organization.va.settlement.failed";
   private String collectionCompleted = "collection.completed";
+  private String disbursementInitiated = "disbursement.initiated";
   private String disbursementCompleted = "disbursement.completed";
+  private String disbursementFailed = "disbursement.failed";
   private String ledgerAccountCreated = "ledger.account.created";
 
   public String getOrganizationOnboarded() {
@@ -119,6 +121,24 @@ public class TopicCatalog {
   }
 
   /**
+   * Returns the topic name for disbursement initiated events.
+   *
+   * @return the disbursement initiated topic name
+   */
+  public String getDisbursementInitiated() {
+    return disbursementInitiated;
+  }
+
+  /**
+   * Sets the topic name for disbursement initiated events.
+   *
+   * @param disbursementInitiated the disbursement initiated topic name
+   */
+  public void setDisbursementInitiated(String disbursementInitiated) {
+    this.disbursementInitiated = disbursementInitiated;
+  }
+
+  /**
    * Returns the topic name for disbursement completed events.
    *
    * @return the disbursement completed topic name
@@ -134,6 +154,24 @@ public class TopicCatalog {
    */
   public void setDisbursementCompleted(String disbursementCompleted) {
     this.disbursementCompleted = disbursementCompleted;
+  }
+
+  /**
+   * Returns the topic name for disbursement failed events.
+   *
+   * @return the disbursement failed topic name
+   */
+  public String getDisbursementFailed() {
+    return disbursementFailed;
+  }
+
+  /**
+   * Sets the topic name for disbursement failed events.
+   *
+   * @param disbursementFailed the disbursement failed topic name
+   */
+  public void setDisbursementFailed(String disbursementFailed) {
+    this.disbursementFailed = disbursementFailed;
   }
 
   /**
@@ -174,7 +212,9 @@ public class TopicCatalog {
       case SETTLEMENT_COMPLETED -> organizationVaSettlementCompleted;
       case SETTLEMENT_FAILED -> organizationVaSettlementFailed;
       case COLLECTION_COMPLETED -> collectionCompleted;
+      case DISBURSEMENT_INITIATED -> disbursementInitiated;
       case DISBURSEMENT_COMPLETED -> disbursementCompleted;
+      case DISBURSEMENT_FAILED -> disbursementFailed;
     };
   }
 }

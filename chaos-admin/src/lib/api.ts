@@ -340,14 +340,23 @@ export type HistoryFilters = {
 // Flow DTOs
 // ---------------------------------------------------------------------------
 
-export type FieldKind = "TEXT" | "UUID" | "AMOUNT" | "DATETIME" | "SELECT" | "VA_REF";
-export type AutogenRule = "NONE" | "UUID_V4";
+export type FieldKind =
+  | "TEXT"
+  | "UUID"
+  | "AMOUNT"
+  | "DATETIME"
+  | "SELECT"
+  | "VA_REF"
+  | "FEE_LIST"
+  | "COUNTRY";
+export type AutogenRule = "NONE" | "UUID_V4" | "ULID";
 export type InferenceRule =
   | "NONE"
   | "ORG_FROM_SOURCE_VA"
   | "ORG_FROM_DEST_VA"
   | "CURRENCY_FROM_SOURCE_VA"
-  | "TENANT_FROM_SOURCE_VA";
+  | "TENANT_FROM_SOURCE_VA"
+  | "CORRIDOR_FROM_COUNTRIES";
 export type AccountKind = "ORGANIZATION" | "SYSTEM";
 
 export type FlowFieldDescriptor = {
@@ -364,6 +373,20 @@ export type FlowFieldDescriptor = {
   options: string[] | null;
 };
 
+// A single initiated→secondary field copy within a lifecycle. Applied only where the secondary
+// form declares a descriptor named `toField`, so one list serves both completed and failed phases.
+export type CarryOver = { fromField: string; toField: string };
+
+// Groups a multi-step transaction lifecycle (Settlement, Disbursement) and its carry-over. Present
+// (non-null) on the `initiated` catalog entry; null on single-shot flows.
+export type FlowLifecycle = {
+  label: string;
+  initiated: string;
+  completed: string;
+  failed: string;
+  carryOver: CarryOver[];
+};
+
 export type FlowCatalogEntry = {
   flowType: string;
   topic: string;
@@ -374,6 +397,7 @@ export type FlowCatalogEntry = {
   optionalFields: string[];
   csvColumns: string[];
   partitionKeyField: string;
+  lifecycle: FlowLifecycle | null;
 };
 
 export type DuplicateOptions = { count: number };
@@ -383,6 +407,19 @@ export type UnbalancedOptions = { delta: number };
 export type BurstOptions = { count: number; ratePerSecond: number };
 export type DelayOptions = { delayMs: number; jitterMs: number };
 
+// N-Times: run a flow `count` times against the same accounts producing genuinely-distinct
+// transactions (fresh *_request_id per iteration). Distinct from Burst (which is duplicate-keyed).
+export type NTimesPacing = "BURST" | "LINEAR" | "RANDOM";
+export type NTimesMode = "SYNC" | "ASYNC";
+export type NTimesOptions = {
+  count: number;
+  pacing: NTimesPacing;
+  mode: NTimesMode;
+  fixedDelayMs?: number | null;
+  minDelayMs?: number | null;
+  maxDelayMs?: number | null;
+};
+
 export type ChaosOptions = {
   duplicate?: DuplicateOptions | null;
   outOfOrder?: OutOfOrderOptions | null;
@@ -390,19 +427,46 @@ export type ChaosOptions = {
   unbalanced?: UnbalancedOptions | null;
   burst?: BurstOptions | null;
   delay?: DelayOptions | null;
+  nTimes?: NTimesOptions | null;
+};
+
+// Aggregate result of a synchronous N-Times run (HTTP 200 from /n-times).
+export type NTimesSyncResult = {
+  flowType: string;
+  count: number;
+  succeeded: number;
+  failed: number;
+  correlationId: string;
+  eventIds: string[];
+  historyIds: string[];
+};
+
+// Discriminated result of publishNTimes: SYNC returns an aggregate, ASYNC returns a run handle.
+export type PublishNTimesResponse =
+  | { kind: "sync"; result: NTimesSyncResult }
+  | { kind: "async"; run: BatchRunResponse };
+
+// A typed fee row carried on a fee-bearing flow (collection, disbursement-completed). Amounts are
+// decimal strings to preserve precision end-to-end; the backend maps these to TransactionFeeLine.
+export type FeeInput = {
+  feeType?: string | null;
+  amount?: string | number | null;
+  feeCode?: string | null;
+  destinationVaId?: string | null;
 };
 
 export type PublishFlowRequest = {
   correlationId?: string | null;
   tenantId?: string | null;
   channel?: string | null;
-  amount?: number | null;
-  grossAmount?: number | null;
-  netAmount?: number | null;
+  amount?: number | string | null;
+  grossAmount?: number | string | null;
+  netAmount?: number | string | null;
   currency?: string | null;
   slotOverrides?: Record<string, string>;
   chaos?: ChaosOptions | null;
   flowFields?: Record<string, unknown>;
+  fees?: FeeInput[];
 };
 
 export type FlowResult = {
@@ -427,10 +491,15 @@ export type BatchRunStatus =
   | "CANCELLED"
   | string;
 
+export type RunKind = "CSV" | "N_TIMES" | "LIFECYCLE" | string;
+
 export type BatchRunResponse = {
   id: string;
   flowType: string;
   filename: string | null;
+  kind: RunKind;
+  pacing: string | null;
+  mode: string | null;
   total: number;
   succeeded: number;
   failed: number;
@@ -590,6 +659,24 @@ export type TrialBalanceEntry = {
   totalDebits: string;
   totalCredits: string;
   netMovement: string;
+};
+
+// A ledger reservation, read-proxied through the chaos gateway (camelCase, passed through). `id` is
+// the reservation id sourced into a disbursement's second event; `transactionRef` equals the
+// disbursement's transaction_id.
+export type ReservationResponse = {
+  id: string;
+  accountId: string;
+  transactionRef: string | null;
+  type: string | null;
+  status: string | null;
+  amount: number | null;
+  amountCaptured: number | null;
+  amountReleased: number | null;
+  disbursementBatchId: string | null;
+  expiresAt: string | null;
+  createdAt: string | null;
+  resolvedAt: string | null;
 };
 
 // The unadjusted trial balance for a period. Mirrors the ledger's TrialBalanceResponse, read-proxied
@@ -816,6 +903,20 @@ export function getTrialBalance(
   });
 }
 
+// Lists an account's reservations, filtered by `transactionRef` (= a disbursement's transaction_id),
+// read-proxied through the chaos gateway. Backs the disbursement wizard's reservation_id poll
+// (ADR-018): poll this until the ledger-created reservation appears, else fall back to manual entry.
+export function getAccountReservations(
+  token: string,
+  accountId: string,
+  transactionRef?: string
+): Promise<ReservationResponse[]> {
+  return request<ReservationResponse[]>(
+    `/ledger/accounts/${encodeURIComponent(accountId)}/reservations`,
+    { token, query: { transactionRef } }
+  );
+}
+
 // ---------------------------------------------------------------------------
 // API functions — Flows
 // ---------------------------------------------------------------------------
@@ -834,6 +935,55 @@ export function runFlow(
     method: "POST",
     body
   });
+}
+
+/**
+ * Runs a flow N times (distinct transactions) via the dedicated `/n-times` endpoint, discriminating
+ * on HTTP status: `200` → an aggregate {@link NTimesSyncResult} (SYNC); `202` → a run handle
+ * (ASYNC). The shared `request` helper hides the status code, so this reads the response directly.
+ */
+export async function publishNTimes(
+  token: string,
+  flowType: string,
+  body: PublishFlowRequest
+): Promise<PublishNTimesResponse> {
+  const url = buildUrl(appConfig.apiBaseUrl, `/flows/${encodeURIComponent(flowType)}/n-times`);
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!response.ok) {
+    const message = await safeJsonMessage(response);
+    if (response.status === 401) _onUnauthorized?.();
+    throw new ApiError(response.status, message);
+  }
+
+  const text = await response.text();
+  const data = text.trim() ? JSON.parse(text) : {};
+  return response.status === 202
+    ? { kind: "async", run: data as BatchRunResponse }
+    : { kind: "sync", result: data as NTimesSyncResult };
+}
+
+/**
+ * Fires N distinct RANDOM-outcome lifecycles unattended on the backend (Settlement/Disbursement),
+ * returning a `202` run handle to poll in the run-results view. `count`/pacing travel inside
+ * `chaos.nTimes` (reusing the N-Times caps); the backend decides SUCCEED/FAIL per lifecycle.
+ */
+export function runRandomLifecycle(
+  token: string,
+  lifecycleType: string,
+  body: PublishFlowRequest
+): Promise<BatchRunResponse> {
+  return request<BatchRunResponse>(
+    `/flows/${encodeURIComponent(lifecycleType)}/random-lifecycle`,
+    { token, method: "POST", body }
+  );
 }
 
 // ---------------------------------------------------------------------------

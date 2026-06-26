@@ -67,8 +67,24 @@ public class FlowEngine {
    * @param request the flow execution request
    * @return the result of the last publish attempt; never null
    */
-  @SuppressWarnings("unchecked")
   public FlowResult execute(FlowRequest request) {
+    return execute(request, null);
+  }
+
+  /**
+   * Executes a transaction flow, optionally overriding the chaos label recorded in publish history.
+   *
+   * <p>When {@code chaosLabelOverride} is non-null it replaces the per-send chaos label written to
+   * history (used by the N-Times runners to stamp {@code "NTIMES:<pacing>:i/N"} on each iteration's
+   * record); the underlying publish path is otherwise unchanged.
+   *
+   * @param request the flow execution request
+   * @param chaosLabelOverride the chaos label to record, or {@code null} to use the per-send label
+   * @return the result of the last publish attempt; never null
+   */
+  @SuppressWarnings("unchecked")
+  public FlowResult execute(
+      FlowRequest request, @org.springframework.lang.Nullable String chaosLabelOverride) {
     FlowBuilder<Object> builder = (FlowBuilder<Object>) registry.get(request.flowType());
     var resolvedSlots = slotResolver.resolveAll(request.flowType(), request);
     var ctx =
@@ -100,6 +116,7 @@ public class FlowEngine {
           published = publisher.publish(topic, partitionKey, send.envelope());
         }
 
+        String chaosLabel = chaosLabelOverride != null ? chaosLabelOverride : send.chaosLabel();
         String historyId =
             historyWriter.record(
                 send.envelope(),
@@ -107,7 +124,7 @@ public class FlowEngine {
                 partitionKey,
                 published,
                 request,
-                send.chaosLabel(),
+                chaosLabel,
                 send.chaosLabel() != null && send.chaosLabel().startsWith("MALFORMED"));
 
         result =

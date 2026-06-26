@@ -1,13 +1,15 @@
 import { InlineNotice } from "@/components/layout/state-panel";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import type { ChaosOptions } from "@/lib/api";
+import type { ChaosOptions, NTimesMode, NTimesOptions, NTimesPacing } from "@/lib/api";
 
 export const CHAOS_LIMITS = {
   maxDuplicates: 10,
   maxBurst: 100,
   maxRatePerSecond: 1000,
-  maxDelayMs: 30_000
+  maxDelayMs: 30_000,
+  maxNTimes: 250,
+  maxNTimesSync: 25
 } as const;
 
 export type ChaosStrategy =
@@ -17,7 +19,8 @@ export type ChaosStrategy =
   | "malformed"
   | "unbalanced"
   | "burst"
-  | "delay";
+  | "delay"
+  | "nTimes";
 
 export type ChaosFormState = {
   strategy: ChaosStrategy;
@@ -28,6 +31,12 @@ export type ChaosFormState = {
   burstRate: number;
   delayMs: number;
   delayJitterMs: number;
+  nTimesCount: number;
+  nTimesPacing: NTimesPacing;
+  nTimesMode: NTimesMode;
+  nTimesFixedDelayMs: number;
+  nTimesMinDelayMs: number;
+  nTimesMaxDelayMs: number;
 };
 
 export const INITIAL_CHAOS: ChaosFormState = {
@@ -38,7 +47,13 @@ export const INITIAL_CHAOS: ChaosFormState = {
   burstCount: 5,
   burstRate: 10,
   delayMs: 1000,
-  delayJitterMs: 0
+  delayJitterMs: 0,
+  nTimesCount: 5,
+  nTimesPacing: "BURST",
+  nTimesMode: "SYNC",
+  nTimesFixedDelayMs: 1000,
+  nTimesMinDelayMs: 100,
+  nTimesMaxDelayMs: 1000
 };
 
 export function buildChaosOptions(f: ChaosFormState): ChaosOptions | null {
@@ -72,6 +87,22 @@ export function buildChaosOptions(f: ChaosFormState): ChaosOptions | null {
           jitterMs: Math.min(f.delayJitterMs, CHAOS_LIMITS.maxDelayMs)
         }
       };
+    case "nTimes": {
+      const maxCount =
+        f.nTimesMode === "SYNC" ? CHAOS_LIMITS.maxNTimesSync : CHAOS_LIMITS.maxNTimes;
+      const nTimes: NTimesOptions = {
+        count: Math.min(Math.max(f.nTimesCount, 1), maxCount),
+        pacing: f.nTimesPacing,
+        mode: f.nTimesMode
+      };
+      if (f.nTimesPacing === "LINEAR") {
+        nTimes.fixedDelayMs = Math.min(Math.max(f.nTimesFixedDelayMs, 0), CHAOS_LIMITS.maxDelayMs);
+      } else if (f.nTimesPacing === "RANDOM") {
+        nTimes.minDelayMs = Math.min(Math.max(f.nTimesMinDelayMs, 0), CHAOS_LIMITS.maxDelayMs);
+        nTimes.maxDelayMs = Math.min(Math.max(f.nTimesMaxDelayMs, 0), CHAOS_LIMITS.maxDelayMs);
+      }
+      return { nTimes };
+    }
     default:
       return null;
   }
@@ -80,6 +111,10 @@ export function buildChaosOptions(f: ChaosFormState): ChaosOptions | null {
 export const isDestructive = (strategy: ChaosStrategy) =>
   ["malformed", "unbalanced", "burst"].includes(strategy);
 
+/** Strategies that should surface a confirmation dialog before sending. */
+export const needsConfirm = (strategy: ChaosStrategy) =>
+  isDestructive(strategy) || strategy === "nTimes";
+
 const STRATEGY_OPTIONS = [
   { value: "", label: "None (normal flow)" },
   { value: "duplicate", label: "Duplicate" },
@@ -87,7 +122,19 @@ const STRATEGY_OPTIONS = [
   { value: "malformed", label: "Malformed ⚠" },
   { value: "unbalanced", label: "Unbalanced ⚠" },
   { value: "burst", label: "Burst ⚠" },
-  { value: "delay", label: "Delay" }
+  { value: "delay", label: "Delay" },
+  { value: "nTimes", label: "N Times" }
+] as const;
+
+const PACING_OPTIONS = [
+  { value: "BURST", label: "Burst (no delay)" },
+  { value: "LINEAR", label: "Linear (fixed gap)" },
+  { value: "RANDOM", label: "Random (random gap)" }
+] as const;
+
+const MODE_OPTIONS = [
+  { value: "SYNC", label: "Sync (inline)" },
+  { value: "ASYNC", label: "Async (tracked run)" }
 ] as const;
 
 /**
@@ -96,12 +143,18 @@ const STRATEGY_OPTIONS = [
  */
 export function ChaosOptionsPanel({
   value,
-  onChange
+  onChange,
+  hideNTimes = false
 }: {
   value: ChaosFormState;
   onChange: (next: ChaosFormState) => void;
+  /** Hide the N-Times strategy — it does not apply to interactive Succeed/Fail lifecycle outcomes. */
+  hideNTimes?: boolean;
 }) {
   const update = (patch: Partial<ChaosFormState>) => onChange({ ...value, ...patch });
+  const strategyOptions = hideNTimes
+    ? STRATEGY_OPTIONS.filter(o => o.value !== "nTimes")
+    : STRATEGY_OPTIONS;
 
   return (
     <div className="space-y-3">
@@ -110,7 +163,7 @@ export function ChaosOptionsPanel({
         <Select
           value={value.strategy}
           onChange={v => update({ strategy: v as ChaosStrategy })}
-          options={STRATEGY_OPTIONS as readonly { value: ChaosStrategy; label: string }[]}
+          options={strategyOptions as readonly { value: ChaosStrategy; label: string }[]}
           placeholder="Select strategy…"
         />
       </div>
@@ -201,6 +254,90 @@ export function ChaosOptionsPanel({
               onChange={e => update({ delayJitterMs: parseInt(e.target.value) || 0 })}
             />
           </div>
+        </div>
+      )}
+
+      {value.strategy === "nTimes" && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">
+                Count (max {value.nTimesMode === "SYNC" ? CHAOS_LIMITS.maxNTimesSync : CHAOS_LIMITS.maxNTimes})
+              </label>
+              <Input
+                type="number"
+                min={1}
+                max={value.nTimesMode === "SYNC" ? CHAOS_LIMITS.maxNTimesSync : CHAOS_LIMITS.maxNTimes}
+                value={value.nTimesCount}
+                onChange={e => update({ nTimesCount: parseInt(e.target.value) || 1 })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Mode</label>
+              <Select
+                value={value.nTimesMode}
+                onChange={v => update({ nTimesMode: v as NTimesMode })}
+                options={MODE_OPTIONS as readonly { value: NTimesMode; label: string }[]}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium">Pacing</label>
+            <Select
+              value={value.nTimesPacing}
+              onChange={v => update({ nTimesPacing: v as NTimesPacing })}
+              options={PACING_OPTIONS as readonly { value: NTimesPacing; label: string }[]}
+            />
+          </div>
+
+          {value.nTimesPacing === "LINEAR" && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">
+                Fixed delay ms (max {CHAOS_LIMITS.maxDelayMs})
+              </label>
+              <Input
+                type="number"
+                min={0}
+                max={CHAOS_LIMITS.maxDelayMs}
+                value={value.nTimesFixedDelayMs}
+                onChange={e => update({ nTimesFixedDelayMs: parseInt(e.target.value) || 0 })}
+              />
+            </div>
+          )}
+
+          {value.nTimesPacing === "RANDOM" && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Min delay ms</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={CHAOS_LIMITS.maxDelayMs}
+                  value={value.nTimesMinDelayMs}
+                  onChange={e => update({ nTimesMinDelayMs: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">
+                  Max delay ms (max {CHAOS_LIMITS.maxDelayMs})
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={CHAOS_LIMITS.maxDelayMs}
+                  value={value.nTimesMaxDelayMs}
+                  onChange={e => update({ nTimesMaxDelayMs: parseInt(e.target.value) || 0 })}
+                />
+              </div>
+            </div>
+          )}
+
+          <InlineNotice
+            title="N Times = N distinct transactions"
+            description="Runs this flow the chosen number of times against the same accounts, each a real, independent transaction (fresh request id). Unlike Burst — which re-sends one duplicate-keyed event — these are not deduplicated by the ledger."
+            tone="default"
+          />
         </div>
       )}
 

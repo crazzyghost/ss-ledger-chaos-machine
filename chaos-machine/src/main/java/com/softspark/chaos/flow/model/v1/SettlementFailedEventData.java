@@ -3,6 +3,7 @@ package com.softspark.chaos.flow.model.v1;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
+import org.springframework.lang.Nullable;
 
 /**
  * Event data for organization.va.settlement.failed events.
@@ -12,6 +13,7 @@ import io.soabase.recordbuilder.core.RecordBuilder;
  * @param settlementRequestId the settlement request identifier
  * @param organizationId the organization whose settlement failed
  * @param virtualAccountId the client virtual account for which settlement failed
+ * @param destinationVaId the optional destination VA the ledger may unwind to (nullable)
  * @param failureReasonCode a machine-readable failure reason code
  * @param failureNote a human-readable explanation of the failure
  * @param markedBy the user or system that marked the failure
@@ -23,6 +25,7 @@ public record SettlementFailedEventData(
     String settlementRequestId,
     String organizationId,
     String virtualAccountId,
+    @Nullable String destinationVaId,
     String failureReasonCode,
     String failureNote,
     String markedBy,

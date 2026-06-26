@@ -5,5 +5,12 @@ public enum AutogenRule {
   /** No auto-generation. */
   NONE,
   /** Seed a fresh UUID v4 (regenerate-able). */
-  UUID_V4
+  UUID_V4,
+  /**
+   * Seed a fresh ULID (lexicographically-sortable, regenerate-able). Used for ledger reference
+   * fields the ledger expects as ULID-shaped strings (e.g. {@code merchant_ref_id},
+   * {@code provider_reference_id}, {@code narration}, {@code destination_bank_account}). The client
+   * seeds it; the server mints one via {@code base.Ids#generateULID()} when left blank.
+   */
+  ULID
 }

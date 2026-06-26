@@ -33,7 +33,7 @@ public class SettlementCompletedFlowBuilder implements FlowBuilder<SettlementCom
 
   @Override
   public String source() {
-    return "settlement-service";
+    return "settlements-service";
   }
 
   @Override
@@ -52,7 +52,7 @@ public class SettlementCompletedFlowBuilder implements FlowBuilder<SettlementCom
             ctx.resolvedSlots().getOrDefault("destination", ""),
             amount,
             request.currency() != null ? request.currency() : f.getRequired("currency"),
-            f.getOptional("completion_reference"),
+            f.getRequired("completion_reference"),
             f.getRequired("completed_by"),
             f.getTimestampOrNow("completed_at"));
 

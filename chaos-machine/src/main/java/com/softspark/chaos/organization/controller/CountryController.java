@@ -35,8 +35,7 @@ public class CountryController {
   private final CountryService countryService;
   private final ReferenceDataSeeder referenceDataSeeder;
 
-  public CountryController(
-      CountryService countryService, ReferenceDataSeeder referenceDataSeeder) {
+  public CountryController(CountryService countryService, ReferenceDataSeeder referenceDataSeeder) {
     this.countryService = countryService;
     this.referenceDataSeeder = referenceDataSeeder;
   }

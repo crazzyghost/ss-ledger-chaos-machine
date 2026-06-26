@@ -32,7 +32,7 @@ public class SettlementInitiatedFlowBuilder implements FlowBuilder<SettlementIni
 
   @Override
   public String source() {
-    return "settlement-service";
+    return "settlements-service";
   }
 
   @Override

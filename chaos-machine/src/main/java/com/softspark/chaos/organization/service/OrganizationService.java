@@ -46,8 +46,7 @@ public class OrganizationService {
   private static final Logger log = LoggerFactory.getLogger(OrganizationService.class);
   private static final int DEFAULT_PAGE_SIZE = 20;
   private static final int MAX_PAGE_SIZE = 100;
-  private static final Set<String> SORTABLE =
-      Set.of("name", "status", "createdAt", "updatedAt");
+  private static final Set<String> SORTABLE = Set.of("name", "status", "createdAt", "updatedAt");
   private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "createdAt");
 
   private final OrganizationRepository organizationRepository;
@@ -106,7 +105,8 @@ public class OrganizationService {
     }
 
     // [Task 004] resolve + validate the country's primary currency (must exist and be ACTIVE).
-    Currency primaryCurrency = resolvePrimaryCurrency(country.getPrimaryCurrencyId(), country.getName());
+    Currency primaryCurrency =
+        resolvePrimaryCurrency(country.getPrimaryCurrencyId(), country.getName());
 
     var organizationType =
         organizationTypeRepository

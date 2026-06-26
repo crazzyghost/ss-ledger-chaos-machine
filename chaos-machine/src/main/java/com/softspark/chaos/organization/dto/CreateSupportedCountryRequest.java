@@ -14,4 +14,5 @@ import jakarta.validation.constraints.NotBlank;
 @RecordBuilder
 public record CreateSupportedCountryRequest(
     @NotBlank(message = "Country ID is required") String countryId,
-    @IsInEnum(enumClass = SupportedCountryStatus.class, message = "Invalid status") String status) {}
+    @IsInEnum(enumClass = SupportedCountryStatus.class, message = "Invalid status")
+        String status) {}

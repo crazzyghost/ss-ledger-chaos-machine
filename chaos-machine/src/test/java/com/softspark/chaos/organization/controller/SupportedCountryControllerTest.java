@@ -112,9 +112,7 @@ class SupportedCountryControllerTest {
     @WithMockUser
     @DisplayName("returns 204 on success")
     void deleteReturns204() throws Exception {
-      mockMvc
-          .perform(delete("/api/v0/supported-countries/sc-1"))
-          .andExpect(status().isNoContent());
+      mockMvc.perform(delete("/api/v0/supported-countries/sc-1")).andExpect(status().isNoContent());
     }
 
     @Test

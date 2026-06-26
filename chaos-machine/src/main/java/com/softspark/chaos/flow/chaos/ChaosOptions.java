@@ -17,6 +17,9 @@ import org.springframework.lang.Nullable;
  * @param unbalanced shifts the {@code net_amount} to create an unbalanced fee scenario
  * @param burst publishes {@code count} events at a controlled rate
  * @param delay introduces an artificial publish delay
+ * @param nTimes runs a flow {@code count} times producing genuinely-distinct transactions against
+ *     the same accounts (re-rolled {@code *_request_id} per iteration); owned by the dedicated
+ *     {@code POST /api/v0/flows/{flowType}/n-times} endpoint, not the plain publish path
  */
 @RecordBuilder
 public record ChaosOptions(
@@ -25,7 +28,8 @@ public record ChaosOptions(
     @Nullable MalformedOptions malformed,
     @Nullable UnbalancedOptions unbalanced,
     @Nullable BurstOptions burst,
-    @Nullable DelayOptions delay) {
+    @Nullable DelayOptions delay,
+    @Nullable NTimesOptions nTimes) {
 
   /**
    * Options for the duplicate strategy.

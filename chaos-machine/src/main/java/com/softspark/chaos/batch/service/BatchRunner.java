@@ -9,7 +9,9 @@ import com.softspark.chaos.batch.repository.BatchRunRepository;
 import com.softspark.chaos.flow.FlowEngine;
 import com.softspark.chaos.flow.FlowRequest;
 import com.softspark.chaos.flow.FlowRequestBuilder;
+import com.softspark.chaos.flow.LifecycleRunner;
 import com.softspark.chaos.flow.chaos.ChaosOptions;
+import com.softspark.chaos.flow.dto.FlowLifecycle;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Executors;
@@ -58,6 +60,19 @@ public class BatchRunner {
   public record RowWithRequest(BatchRow row, FlowRequest request) {}
 
   /**
+   * Pairs a {@link BatchRow} with everything needed to run one RANDOM lifecycle as a two-publish
+   * unit (initiated → completed|failed).
+   *
+   * @param row the batch row entity
+   * @param initiated the shared operator-supplied initiated intent (re-rolled per lifecycle)
+   * @param lifecycle the lifecycle grouping (phases + carry-over)
+   * @param seed the per-run outcome seed
+   * @param index the zero-based lifecycle index within the run
+   */
+  public record LifecycleUnit(
+      BatchRow row, FlowRequest initiated, FlowLifecycle lifecycle, long seed, int index) {}
+
+  /**
    * Executes the given batch rows asynchronously and updates the batch run on completion.
    *
    * @param batchRunId the batch run id to update
@@ -74,6 +89,52 @@ public class BatchRunner {
     Thread.ofVirtual()
         .name("batch-runner-" + batchRunId)
         .start(() -> runBatch(batchRunId, rowsWithRequests, maxRatePerSecond, chaos));
+  }
+
+  /**
+   * Executes an N-Times run asynchronously with pacing-aware concurrency, applying a per-row chaos
+   * label to history. {@code BURST} fans the rows out concurrently (bounded by the worker
+   * semaphore); {@code LINEAR}/{@code RANDOM} run one-at-a-time with the configured gap.
+   *
+   * @param batchRunId the run id to update
+   * @param rowsWithRequests the rows and their pre-expanded distinct flow requests
+   * @param plan the pacing plan (concurrency + inter-row delay)
+   * @param pacingName the pacing name used in the {@code NTIMES:<pacing>:i/N} history label
+   * @param total the total iteration count used in the history label
+   */
+  public void executeNTimes(
+      String batchRunId,
+      List<RowWithRequest> rowsWithRequests,
+      PacingPlan plan,
+      String pacingName,
+      int total) {
+
+    Thread.ofVirtual()
+        .name("n-times-runner-" + batchRunId)
+        .start(() -> runNTimes(batchRunId, rowsWithRequests, plan, pacingName, total));
+  }
+
+  /**
+   * Executes a RANDOM lifecycle run asynchronously with pacing-aware concurrency. Each unit is a
+   * two-publish lifecycle (initiated → completed|failed) run via the {@link LifecycleRunner}; a row
+   * is {@code PUBLISHED} only when both publishes succeed, else {@code FAILED}.
+   *
+   * @param batchRunId the run id to update
+   * @param units the per-lifecycle units (row + shared initiated intent + lifecycle + seed/index)
+   * @param plan the pacing plan (concurrency + inter-row delay)
+   * @param total the total lifecycle count used in the history label
+   * @param lifecycleRunner the orchestrator that runs one lifecycle
+   */
+  public void executeLifecycle(
+      String batchRunId,
+      List<LifecycleUnit> units,
+      PacingPlan plan,
+      int total,
+      LifecycleRunner lifecycleRunner) {
+
+    Thread.ofVirtual()
+        .name("lifecycle-runner-" + batchRunId)
+        .start(() -> runLifecycle(batchRunId, units, plan, total, lifecycleRunner));
   }
 
   private void runBatch(
@@ -116,6 +177,7 @@ public class BatchRunner {
                     .slotOverrides(rwr.request().slotOverrides())
                     .chaos(chaos)
                     .flowFields(rwr.request().flowFields())
+                    .fees(rwr.request().fees())
                     .build()
                 : rwr.request();
 
@@ -133,15 +195,136 @@ public class BatchRunner {
     finalizeRun(batchRunId);
   }
 
+  private void runNTimes(
+      String batchRunId,
+      List<RowWithRequest> rowsWithRequests,
+      PacingPlan plan,
+      String pacingName,
+      int total) {
+
+    int concurrency = Math.max(1, Math.min(plan.concurrency(), maxWorkers));
+    var semaphore = new Semaphore(concurrency);
+    boolean first = true;
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (RowWithRequest rwr : rowsWithRequests) {
+        if (rwr.row().getStatus() != BatchRowStatus.PENDING) {
+          continue;
+        }
+
+        if (!first) {
+          applyRateDelay(plan.delayMs().getAsLong());
+        }
+        first = false;
+
+        try {
+          semaphore.acquire();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          log.warn("N-Times runner interrupted for run {}", batchRunId);
+          break;
+        }
+
+        String label = "NTIMES:" + pacingName + ":" + (rwr.row().getRowNumber() + 1) + "/" + total;
+        executor.submit(
+            () -> {
+              try {
+                processRow(rwr.row(), rwr.request(), label);
+              } finally {
+                semaphore.release();
+              }
+            });
+      }
+    }
+
+    finalizeRun(batchRunId);
+  }
+
+  private void runLifecycle(
+      String batchRunId,
+      List<LifecycleUnit> units,
+      PacingPlan plan,
+      int total,
+      LifecycleRunner lifecycleRunner) {
+
+    int concurrency = Math.max(1, Math.min(plan.concurrency(), maxWorkers));
+    var semaphore = new Semaphore(concurrency);
+    boolean first = true;
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (LifecycleUnit unit : units) {
+        if (unit.row().getStatus() != BatchRowStatus.PENDING) {
+          continue;
+        }
+
+        if (!first) {
+          applyRateDelay(plan.delayMs().getAsLong());
+        }
+        first = false;
+
+        try {
+          semaphore.acquire();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          log.warn("Lifecycle runner interrupted for run {}", batchRunId);
+          break;
+        }
+
+        executor.submit(
+            () -> {
+              try {
+                processLifecycleRow(unit, lifecycleRunner, total);
+              } finally {
+                semaphore.release();
+              }
+            });
+      }
+    }
+
+    finalizeRun(batchRunId);
+  }
+
   @Transactional
   void processRow(BatchRow row, FlowRequest request) {
+    processRow(row, request, null);
+  }
+
+  @Transactional
+  void processRow(BatchRow row, FlowRequest request, @Nullable String chaosLabel) {
     try {
-      var result = flowEngine.execute(request);
+      var result = flowEngine.execute(request, chaosLabel);
       row.setStatus(BatchRowStatus.PUBLISHED);
       row.setEventId(result.eventId());
       batchRowRepository.save(row);
     } catch (Exception e) {
       log.error("Batch row {} failed: {}", row.getId(), e.getMessage(), e);
+      row.setStatus(BatchRowStatus.FAILED);
+      row.setError(e.getMessage());
+      batchRowRepository.save(row);
+    }
+  }
+
+  /**
+   * Runs one lifecycle row (two publishes). Intentionally <em>not</em> {@code @Transactional}: the
+   * disbursement reservation poll can sleep up to its timeout, and the datasource pool is tiny, so
+   * we must not hold a DB connection across the wait — only the brief row-status save touches the DB.
+   */
+  void processLifecycleRow(LifecycleUnit unit, LifecycleRunner lifecycleRunner, int total) {
+    BatchRow row = unit.row();
+    try {
+      LifecycleRunner.Result result =
+          lifecycleRunner.runOne(
+              unit.initiated(), unit.lifecycle(), unit.seed(), unit.index(), total);
+      if (result.success()) {
+        row.setStatus(BatchRowStatus.PUBLISHED);
+        row.setEventId(result.initiatedEventId());
+      } else {
+        row.setStatus(BatchRowStatus.FAILED);
+        row.setError("Lifecycle publish failed (initiated or secondary event did not publish)");
+      }
+      batchRowRepository.save(row);
+    } catch (Exception e) {
+      log.error("Lifecycle row {} failed: {}", row.getId(), e.getMessage(), e);
       row.setStatus(BatchRowStatus.FAILED);
       row.setError(e.getMessage());
       batchRowRepository.save(row);

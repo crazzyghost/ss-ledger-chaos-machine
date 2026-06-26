@@ -2,26 +2,33 @@ package com.softspark.chaos.flow.builder;
 
 import com.softspark.chaos.flow.dto.AccountKind;
 import com.softspark.chaos.flow.dto.AutogenRule;
+import com.softspark.chaos.flow.dto.CarryOver;
 import com.softspark.chaos.flow.dto.FieldKind;
 import com.softspark.chaos.flow.dto.FlowCatalogEntry;
 import com.softspark.chaos.flow.dto.FlowFieldDescriptor;
 import com.softspark.chaos.flow.dto.FlowFieldDescriptorBuilder;
+import com.softspark.chaos.flow.dto.FlowLifecycle;
 import com.softspark.chaos.flow.dto.InferenceRule;
 import com.softspark.chaos.flow.model.FlowType;
 import com.softspark.chaos.kafka.TopicCatalog;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 
 /**
  * Provides the static flow catalog metadata for all supported flow types.
  *
  * <p>Used by the catalog REST endpoint to expose, per flow: structured field descriptors (driving
- * the Single Flow Run form), legacy required/optional field hints, and the CSV column schema.
+ * the Single Flow Run form), legacy required/optional field hints, the CSV column schema, and — for
+ * multi-step transaction types — a {@link FlowLifecycle} grouping with the initiated→secondary
+ * carry-over.
  *
- * <p>Only the five transaction types listed in idea {@code 004_single_flow_run.md} are
- * {@code runnerVisible} and carry rich descriptors; every other flow is hidden from the runner and
- * carries minimal text descriptors derived from its required/optional lists.
+ * <p>Eight transaction types are {@code runnerVisible} (carry rich descriptors and appear in the
+ * radio): the five Phase 011 flows plus {@code COLLECTION_COMPLETED}, {@code SETTLEMENT_INITIATED},
+ * and {@code DISBURSEMENT_INITIATED}. The lifecycle {@code *_COMPLETED}/{@code *_FAILED} phases are
+ * hidden ({@code runnerVisible = false}) but keep full descriptors so the wizard and the RANDOM
+ * runner can render/build them; the remaining flows carry minimal text descriptors.
  */
 @Component
 public class FlowCatalogProvider {
@@ -31,7 +38,24 @@ public class FlowCatalogProvider {
 
   private static final String DEFAULT_NARRATIVE = "Chaos run";
   private static final String DEFAULT_AMOUNT = "1000.0000";
+  private static final String DEFAULT_PROVIDER = "PROVIDER_GH";
+  private static final String DEFAULT_CREDIT_ACCOUNT = "0240000000";
+  private static final String DEFAULT_COUNTRY = "GH";
   private static final List<String> CHANNEL_OPTIONS = List.of("bank", "momo");
+  private static final List<String> SUBTYPE_OPTIONS = List.of("DOMESTIC", "CROSS_BORDER");
+  private static final List<String> BANK_OPTIONS =
+      List.of("ABSA", "GCB Bank", "Stanbic", "Ecobank");
+  private static final List<String> DISBURSEMENT_FAILURE_CODES =
+      List.of(
+          "PROVIDER_REJECTED",
+          "PROVIDER_TIMEOUT",
+          "RECIPIENT_INVALID",
+          "VALIDATION_FAILED",
+          "PROVIDER_UNAVAILABLE",
+          "RESERVATION_MISSING",
+          "SUBTYPE_UNSUPPORTED");
+  private static final List<String> SETTLEMENT_FAILURE_CODES =
+      List.of("BANK_REJECTED", "ACCOUNT_INVALID", "TIMEOUT", "INSUFFICIENT_FUNDS", "UNSPECIFIED");
 
   private final TopicCatalog topicCatalog;
 
@@ -54,7 +78,8 @@ public class FlowCatalogProvider {
             List.of("topup_request_id", "organization_id", "approved_by"),
             List.of("currency", "amount", "source_payment_reference", "approved_at"),
             List.of("topup_request_id", "organization_id", "amount", "currency", "approved_by"),
-            "organization_id"),
+            "organization_id",
+            null),
         runnerEntry(
             FlowType.TRANSFER_REQUESTED,
             "transfer-service",
@@ -74,7 +99,8 @@ public class FlowCatalogProvider {
                 "currency",
                 "narrative",
                 "initiated_by"),
-            "source_organization_id"),
+            "source_organization_id",
+            null),
         runnerEntry(
             FlowType.TREASURY_PREFUND_COMPLETED,
             "treasury-service",
@@ -88,7 +114,8 @@ public class FlowCatalogProvider {
                 "amount",
                 "currency",
                 "completed_by"),
-            "prefund_request_id"),
+            "prefund_request_id",
+            null),
         runnerEntry(
             FlowType.TREASURY_SWEEP_COMPLETED,
             "treasury-service",
@@ -102,7 +129,8 @@ public class FlowCatalogProvider {
                 "amount",
                 "currency",
                 "completed_by"),
-            "sweep_request_id"),
+            "sweep_request_id",
+            null),
         runnerEntry(
             FlowType.TREASURY_TRANSFER_COMPLETED,
             "treasury-service",
@@ -116,7 +144,168 @@ public class FlowCatalogProvider {
                 "amount",
                 "currency",
                 "completed_by"),
-            "transfer_request_id"),
+            "transfer_request_id",
+            null),
+        runnerEntry(
+            FlowType.COLLECTION_COMPLETED,
+            "payment-service",
+            collectionFields(),
+            List.of("transaction_id", "provider_id", "provider_reference_id", "merchant_ref_id"),
+            List.of("currency", "net_amount", "commission_split_id", "completed_at"),
+            List.of(
+                "transaction_id",
+                "net_amount",
+                "currency",
+                "provider_id",
+                "provider_reference_id",
+                "merchant_ref_id"),
+            "destination",
+            null),
+        runnerEntry(
+            FlowType.SETTLEMENT_INITIATED,
+            "settlements-service",
+            settlementInitiatedFields(),
+            List.of("settlement_request_id", "virtual_account_id", "organization_id"),
+            List.of(
+                "currency",
+                "amount",
+                "destination_bank_account",
+                "destination_bank",
+                "approved_by",
+                "approved_at"),
+            List.of(
+                "settlement_request_id",
+                "virtual_account_id",
+                "organization_id",
+                "amount",
+                "currency",
+                "destination_bank_account",
+                "destination_bank",
+                "approved_by"),
+            "organization_id",
+            settlementLifecycle()),
+        runnerEntry(
+            FlowType.DISBURSEMENT_INITIATED,
+            "payment-service",
+            disbursementInitiatedFields(),
+            List.of(
+                "transaction_id",
+                "virtual_account_id",
+                "merchant_id",
+                "merchant_ref_id",
+                "credit_provider_id",
+                "credit_account_id"),
+            List.of(
+                "currency",
+                "narration",
+                "fx_quote_reference",
+                "disbursement_subtype",
+                "source_country",
+                "destination_country",
+                "corridor"),
+            List.of(
+                "transaction_id",
+                "virtual_account_id",
+                "principal_amount",
+                "fee_amount",
+                "currency",
+                "merchant_id",
+                "merchant_ref_id",
+                "credit_provider_id",
+                "credit_account_id"),
+            "virtual_account_id",
+            disbursementLifecycle()),
+        // ---- Hidden lifecycle secondary phases (rich descriptors, runnerVisible=false) --------
+        richHiddenEntry(
+            FlowType.SETTLEMENT_COMPLETED,
+            "settlements-service",
+            settlementCompletedFields(),
+            List.of(
+                "settlement_request_id",
+                "source_organization_id",
+                "completion_reference",
+                "completed_by"),
+            List.of("currency", "amount", "completed_at"),
+            List.of(
+                "settlement_request_id",
+                "source_organization_id",
+                "amount",
+                "currency",
+                "completion_reference",
+                "completed_by"),
+            "source_organization_id"),
+        richHiddenEntry(
+            FlowType.SETTLEMENT_FAILED,
+            "settlements-service",
+            settlementFailedFields(),
+            List.of(
+                "settlement_request_id",
+                "organization_id",
+                "virtual_account_id",
+                "failure_reason_code",
+                "failure_note",
+                "marked_by"),
+            List.of("destination_va_id", "marked_at"),
+            List.of(
+                "settlement_request_id",
+                "organization_id",
+                "virtual_account_id",
+                "failure_reason_code",
+                "failure_note",
+                "marked_by"),
+            "organization_id"),
+        richHiddenEntry(
+            FlowType.DISBURSEMENT_COMPLETED,
+            "payment-service",
+            disbursementCompletedFields(),
+            List.of(
+                "transaction_id",
+                "reservation_id",
+                "principal_amount",
+                "provider_id",
+                "provider_reference_id",
+                "merchant_ref_id"),
+            List.of(
+                "currency",
+                "disbursement_subtype",
+                "recipient_reference",
+                "destination_country",
+                "corridor",
+                "applied_fx_rate",
+                "completed_at"),
+            List.of(
+                "transaction_id",
+                "principal_amount",
+                "currency",
+                "provider_id",
+                "provider_reference_id",
+                "merchant_ref_id",
+                "reservation_id"),
+            "source"),
+        richHiddenEntry(
+            FlowType.DISBURSEMENT_FAILED,
+            "payment-service",
+            disbursementFailedFields(),
+            List.of(
+                "transaction_id",
+                "virtual_account_id",
+                "reservation_id",
+                "principal_amount",
+                "provider_id",
+                "merchant_ref_id",
+                "failure_reason"),
+            List.of("currency", "disbursement_subtype", "failure_code", "failed_at",
+                "provider_reference_id"),
+            List.of(
+                "transaction_id",
+                "virtual_account_id",
+                "principal_amount",
+                "currency",
+                "provider_id",
+                "merchant_ref_id",
+                "reservation_id",
+                "failure_reason"),
+            "virtual_account_id"),
         // ---- Hidden flows (minimal text descriptors, runnerVisible=false) ---------------------
         hiddenEntry(
             FlowType.ORGANIZATION_ONBOARDED,
@@ -147,96 +336,41 @@ public class FlowCatalogProvider {
             List.of("id", "status", "currency_id", "type_id"),
             List.of(),
             List.of("id", "status", "currency_id", "type_id"),
-            "id"),
-        hiddenEntry(
-            FlowType.SETTLEMENT_INITIATED,
-            "settlement-service",
-            List.of(
-                "settlement_request_id",
-                "virtual_account_id",
-                "organization_id",
-                "destination_bank_account",
-                "destination_bank",
-                "approved_by"),
-            List.of("currency", "amount", "approved_at"),
-            List.of(
-                "settlement_request_id",
-                "virtual_account_id",
-                "organization_id",
-                "amount",
-                "currency",
-                "destination_bank_account",
-                "destination_bank",
-                "approved_by"),
-            "organization_id"),
-        hiddenEntry(
-            FlowType.SETTLEMENT_COMPLETED,
-            "settlement-service",
-            List.of("settlement_request_id", "source_organization_id", "completed_by"),
-            List.of("currency", "amount", "completion_reference", "completed_at"),
-            List.of(
-                "settlement_request_id",
-                "source_organization_id",
-                "amount",
-                "currency",
-                "completed_by"),
-            "source_organization_id"),
-        hiddenEntry(
-            FlowType.SETTLEMENT_FAILED,
-            "settlement-service",
-            List.of(
-                "settlement_request_id",
-                "organization_id",
-                "virtual_account_id",
-                "failure_reason_code",
-                "failure_note",
-                "marked_by"),
-            List.of("marked_at"),
-            List.of(
-                "settlement_request_id",
-                "organization_id",
-                "virtual_account_id",
-                "failure_reason_code",
-                "failure_note",
-                "marked_by"),
-            "organization_id"),
-        hiddenEntry(
-            FlowType.COLLECTION_COMPLETED,
-            "payment-service",
-            List.of("collection_request_id", "merchant_reference", "provider_collection_id"),
-            List.of("currency", "gross_amount", "net_amount", "fee_type"),
-            List.of(
-                "collection_request_id",
-                "gross_amount",
-                "net_amount",
-                "currency",
-                "merchant_reference",
-                "provider_collection_id"),
-            "destination"),
-        hiddenEntry(
-            FlowType.DISBURSEMENT_COMPLETED,
-            "disbursement-service",
-            List.of(
-                "disbursement_request_id",
-                "organization_id",
-                "recipient_account_number",
-                "recipient_bank",
-                "merchant_reference",
-                "provider_disbursement_id",
-                "approved_by"),
-            List.of("currency", "gross_amount", "net_amount", "fee_type", "completed_at"),
-            List.of(
-                "disbursement_request_id",
-                "organization_id",
-                "gross_amount",
-                "net_amount",
-                "currency",
-                "recipient_account_number",
-                "recipient_bank",
-                "merchant_reference",
-                "provider_disbursement_id",
-                "approved_by"),
-            "organization_id"));
+            "id"));
+  }
+
+  // ---- Lifecycle groupings ----------------------------------------------------------------------
+
+  private static FlowLifecycle settlementLifecycle() {
+    return new FlowLifecycle(
+        "Settlement",
+        FlowType.SETTLEMENT_INITIATED,
+        FlowType.SETTLEMENT_COMPLETED,
+        FlowType.SETTLEMENT_FAILED,
+        List.of(
+            new CarryOver("settlement_request_id", "settlement_request_id"),
+            new CarryOver("virtual_account_id", "source_va_id"),
+            new CarryOver("virtual_account_id", "virtual_account_id"),
+            new CarryOver("amount", "amount"),
+            new CarryOver("currency", "currency"),
+            new CarryOver("organization_id", "source_organization_id"),
+            new CarryOver("organization_id", "organization_id")));
+  }
+
+  private static FlowLifecycle disbursementLifecycle() {
+    return new FlowLifecycle(
+        "Disbursement",
+        FlowType.DISBURSEMENT_INITIATED,
+        FlowType.DISBURSEMENT_COMPLETED,
+        FlowType.DISBURSEMENT_FAILED,
+        List.of(
+            new CarryOver("transaction_id", "transaction_id"),
+            new CarryOver("virtual_account_id", "source_va_id"),
+            new CarryOver("virtual_account_id", "virtual_account_id"),
+            new CarryOver("principal_amount", "principal_amount"),
+            new CarryOver("disbursement_subtype", "disbursement_subtype"),
+            new CarryOver("currency", "currency"),
+            new CarryOver("merchant_ref_id", "merchant_ref_id")));
   }
 
   // ---- Per-flow descriptor lists ----------------------------------------------------------------
@@ -262,7 +396,8 @@ public class FlowCatalogProvider {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(uuid("transfer_request_id", "Transaction Request ID"));
     fields.add(vaRef("source_va_id", "Source VA ID", AccountKind.ORGANIZATION, "source"));
-    fields.add(vaRef("destination_va_id", "Destination VA ID", AccountKind.ORGANIZATION, "destination"));
+    fields.add(
+        vaRef("destination_va_id", "Destination VA ID", AccountKind.ORGANIZATION, "destination"));
     fields.add(amount());
     fields.add(
         advInferred(
@@ -288,7 +423,8 @@ public class FlowCatalogProvider {
     fields.add(vaRef("source_va_id", "Source VA ID", AccountKind.SYSTEM, "source"));
     fields.add(vaRef("destination_va_id", "Destination VA ID", AccountKind.SYSTEM, "destination"));
     fields.add(amount());
-    fields.add(advSelect("source_channel", "Source Channel", sourceChannelDefault, CHANNEL_OPTIONS));
+    fields.add(
+        advSelect("source_channel", "Source Channel", sourceChannelDefault, CHANNEL_OPTIONS));
     fields.add(
         advSelect(
             "destination_channel",
@@ -299,20 +435,169 @@ public class FlowCatalogProvider {
     // The ledger uses completion_reference as the journal transactionReference (required,
     // non-blank, unique). Auto-fill with a fresh UUID; still editable/clearable for chaos.
     fields.add(advAutogen("completion_reference", "Completion Reference"));
-    // Idea labels these "Initiated By/At"; the payload wire fields are `completed_by`/`completed_at`.
+    // Idea labels these "Initiated By/At"; the payload wire fields are
+    // `completed_by`/`completed_at`.
     fields.add(advText("completed_by", "Initiated By", DEFAULT_ACTOR));
     fields.add(advDateTime("completed_at", "Initiated At"));
     fields.addAll(globalAdvanced());
     return List.copyOf(fields);
   }
 
+  /** Collection: single {@code collection.completed} with a dynamic fee list. */
+  private List<FlowFieldDescriptor> collectionFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("transaction_id", "Transaction ID"));
+    fields.add(vaRef("source_va_id", "Source VA (Float)", AccountKind.SYSTEM, "source"));
+    fields.add(
+        vaRef(
+            "destination_va_id", "Destination VA (Organization)", AccountKind.ORGANIZATION,
+            "destination"));
+    fields.add(amountField("amount", "Net Amount", DEFAULT_AMOUNT));
+    fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
+    fields.add(advText("provider_id", "Provider ID", DEFAULT_PROVIDER));
+    fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advText("commission_split_id", "Commission Split ID", null));
+    fields.add(advDateTime("completed_at", "Completed At"));
+    fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
+    fields.addAll(globalAdvanced());
+    return List.copyOf(fields);
+  }
+
+  /** Disbursement initiated: lifecycle step 1 (mints the transaction id; org VA reservation). */
+  private List<FlowFieldDescriptor> disbursementInitiatedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("transaction_id", "Transaction ID"));
+    fields.add(
+        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
+    fields.add(amountField("fee_amount", "Fee Amount", "10"));
+    fields.add(advInferred("merchant_id", "Merchant ID", InferenceRule.ORG_FROM_SOURCE_VA));
+    fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
+    fields.add(advUlid("narration", "Narration"));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(advText("credit_account_id", "Credit Account ID", DEFAULT_CREDIT_ACCOUNT));
+    fields.add(advText("credit_provider_id", "Credit Provider ID", DEFAULT_PROVIDER));
+    fields.add(country("source_country", "Source Country", DEFAULT_COUNTRY));
+    fields.add(country("destination_country", "Destination Country", DEFAULT_COUNTRY));
+    fields.add(derivedCorridor());
+    fields.add(advText("fx_quote_reference", "FX Quote Reference", null));
+    // Disbursement owns correlation_id as a first-class field (the ledger transaction reference),
+    // so the global correlation_id advanced is intentionally omitted here.
+    fields.add(advAutogen("correlation_id", "Correlation ID"));
+    fields.add(advText("authorised_user_id", "Authorised User ID", "chaos-operator"));
+    fields.add(advText("authorised_key_fingerprint", "Authorised Key Fingerprint", "ab:cd:ef:00"));
+    fields.add(tenantAdvanced());
+    return List.copyOf(fields);
+  }
+
+  /** Disbursement completed: lifecycle success phase (carry-over + reservation + fees). */
+  private List<FlowFieldDescriptor> disbursementCompletedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("transaction_id", "Transaction ID"));
+    fields.add(vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
+    fields.add(
+        vaRef("destination_va_id", "Destination VA (Settlement)", AccountKind.SYSTEM, "destination"));
+    fields.add(reservationField("reservation_id", "Reservation ID"));
+    fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
+    fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
+    fields.add(advText("provider_id", "Provider ID", DEFAULT_PROVIDER));
+    fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
+    fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(advText("recipient_reference", "Recipient Reference", null));
+    fields.add(advText("destination_country", "Destination Country", null));
+    fields.add(advText("corridor", "Corridor", null));
+    fields.add(amountAdv("applied_fx_rate", "Applied FX Rate"));
+    fields.add(advDateTime("completed_at", "Completed At"));
+    return List.copyOf(fields);
+  }
+
+  /** Disbursement failed: lifecycle failure phase (carry-over + reservation + failure fields). */
+  private List<FlowFieldDescriptor> disbursementFailedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("transaction_id", "Transaction ID"));
+    fields.add(
+        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(reservationField("reservation_id", "Reservation ID"));
+    fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
+    fields.add(reqText("failure_reason", "Failure Reason", "Disbursement failed"));
+    fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("failure_code", "Failure Code", "PROVIDER_REJECTED", DISBURSEMENT_FAILURE_CODES));
+    fields.add(advDateTime("failed_at", "Failed At"));
+    fields.add(advText("provider_id", "Provider ID", DEFAULT_PROVIDER));
+    fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
+    return List.copyOf(fields);
+  }
+
+  /** Settlement initiated: lifecycle step 1 (org VA → bank). */
+  private List<FlowFieldDescriptor> settlementInitiatedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("settlement_request_id", "Settlement Request ID"));
+    fields.add(
+        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(amountField("amount", "Amount", DEFAULT_AMOUNT));
+    fields.add(advInferred("organization_id", "Organization ID", InferenceRule.ORG_FROM_SOURCE_VA));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advUlid("destination_bank_account", "Destination Bank Account"));
+    fields.add(advSelect("destination_bank", "Destination Bank", "ABSA", BANK_OPTIONS));
+    fields.add(advText("approved_by", "Approved By", DEFAULT_ACTOR));
+    fields.add(advDateTime("approved_at", "Approved At"));
+    fields.addAll(globalAdvanced());
+    return List.copyOf(fields);
+  }
+
+  /** Settlement completed: lifecycle success phase (carry-over + settlement VA). */
+  private List<FlowFieldDescriptor> settlementCompletedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("settlement_request_id", "Settlement Request ID"));
+    fields.add(
+        advInferred(
+            "source_organization_id", "Source Organization ID", InferenceRule.ORG_FROM_SOURCE_VA));
+    fields.add(vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
+    fields.add(
+        vaRef(
+            "settlement_va_id", "Settlement VA (Settlement Account)", AccountKind.SYSTEM,
+            "destination"));
+    fields.add(amountField("amount", "Amount", DEFAULT_AMOUNT));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advAutogen("completion_reference", "Completion Reference"));
+    fields.add(advText("completed_by", "Completed By", DEFAULT_ACTOR));
+    fields.add(advDateTime("completed_at", "Completed At"));
+    return List.copyOf(fields);
+  }
+
+  /** Settlement failed: lifecycle failure phase (carry-over + failure fields). */
+  private List<FlowFieldDescriptor> settlementFailedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(uuid("settlement_request_id", "Settlement Request ID"));
+    fields.add(advInferred("organization_id", "Organization ID", InferenceRule.ORG_FROM_SOURCE_VA));
+    fields.add(
+        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(
+        reqSelect(
+            "failure_reason_code", "Failure Reason Code", "BANK_REJECTED", SETTLEMENT_FAILURE_CODES));
+    fields.add(reqText("failure_note", "Failure Note", "Settlement failed"));
+    fields.add(vaRefFlowAdv("destination_va_id", "Destination VA", AccountKind.SYSTEM));
+    fields.add(advText("marked_by", "Marked By", DEFAULT_ACTOR));
+    fields.add(advDateTime("marked_at", "Marked At"));
+    return List.copyOf(fields);
+  }
+
   /** Advanced fields appended to every runner flow. */
   private List<FlowFieldDescriptor> globalAdvanced() {
-    return List.of(
-        advText("correlation_id", "Correlation ID", null),
-        base("tenant_id", "Tenant ID", FieldKind.TEXT, false, true)
-            .inference(InferenceRule.TENANT_FROM_SOURCE_VA)
-            .build());
+    return List.of(advText("correlation_id", "Correlation ID", null), tenantAdvanced());
+  }
+
+  private FlowFieldDescriptor tenantAdvanced() {
+    return base("tenant_id", "Tenant ID", FieldKind.TEXT, false, true)
+        .inference(InferenceRule.TENANT_FROM_SOURCE_VA)
+        .build();
   }
 
   // ---- Descriptor factory helpers ---------------------------------------------------------------
@@ -345,21 +630,61 @@ public class FlowCatalogProvider {
         .build();
   }
 
+  /** A required VA picker whose value routes to {@code flowFields[name]} (no slot). */
+  private static FlowFieldDescriptor vaRefFlow(String name, String label, AccountKind accountKind) {
+    return base(name, label, FieldKind.VA_REF, true, false).accountKind(accountKind).build();
+  }
+
+  /** An advanced/optional VA picker whose value routes to {@code flowFields[name]} (no slot). */
+  private static FlowFieldDescriptor vaRefFlowAdv(
+      String name, String label, AccountKind accountKind) {
+    return base(name, label, FieldKind.VA_REF, false, true).accountKind(accountKind).build();
+  }
+
+  /** The dynamic fee list; rows credit a SYSTEM fee-revenue VA and assemble into {@code fees[]}. */
+  private static FlowFieldDescriptor feeList(String name, String label, AccountKind accountKind) {
+    return base(name, label, FieldKind.FEE_LIST, true, false).accountKind(accountKind).build();
+  }
+
+  /** A supported-country select; options are client-fetched (Phase 010), seeded with an ISO code. */
+  private static FlowFieldDescriptor country(String name, String label, String defaultIso) {
+    return base(name, label, FieldKind.COUNTRY, false, true).defaultValue(defaultIso).build();
+  }
+
   private static FlowFieldDescriptor amount() {
     return base("amount", "Amount", FieldKind.AMOUNT, true, false).defaultValue(DEFAULT_AMOUNT).build();
+  }
+
+  private static FlowFieldDescriptor amountField(String name, String label, String defaultValue) {
+    return base(name, label, FieldKind.AMOUNT, true, false).defaultValue(defaultValue).build();
+  }
+
+  /** An advanced (optional) amount field (e.g. {@code applied_fx_rate}). */
+  private static FlowFieldDescriptor amountAdv(String name, String label) {
+    return base(name, label, FieldKind.AMOUNT, false, true).build();
   }
 
   private static FlowFieldDescriptor advInferred(String name, String label, InferenceRule rule) {
     return base(name, label, FieldKind.TEXT, false, true).inference(rule).build();
   }
 
-  private static FlowFieldDescriptor advText(String name, String label, String defaultValue) {
+  private static FlowFieldDescriptor advText(String name, String label, @Nullable String defaultValue) {
     return base(name, label, FieldKind.TEXT, false, true).defaultValue(defaultValue).build();
+  }
+
+  /** A required (shown) text field with a default. */
+  private static FlowFieldDescriptor reqText(String name, String label, String defaultValue) {
+    return base(name, label, FieldKind.TEXT, true, false).defaultValue(defaultValue).build();
   }
 
   /** Advanced (collapsed) field auto-filled with a fresh UUID — used for ledger reference fields. */
   private static FlowFieldDescriptor advAutogen(String name, String label) {
     return base(name, label, FieldKind.TEXT, false, true).autogen(AutogenRule.UUID_V4).build();
+  }
+
+  /** Advanced (collapsed) field auto-filled with a fresh ULID — used for ULID reference fields. */
+  private static FlowFieldDescriptor advUlid(String name, String label) {
+    return base(name, label, FieldKind.TEXT, false, true).autogen(AutogenRule.ULID).build();
   }
 
   private static FlowFieldDescriptor advDateTime(String name, String label) {
@@ -371,6 +696,27 @@ public class FlowCatalogProvider {
     return base(name, label, FieldKind.SELECT, false, true)
         .defaultValue(defaultValue)
         .options(options)
+        .build();
+  }
+
+  /** A required (shown) select with a default. */
+  private static FlowFieldDescriptor reqSelect(
+      String name, String label, String defaultValue, List<String> options) {
+    return base(name, label, FieldKind.SELECT, true, false)
+        .defaultValue(defaultValue)
+        .options(options)
+        .build();
+  }
+
+  /** The reservation id field, rendered with the poll/loading/manual control by the wizard. */
+  private static FlowFieldDescriptor reservationField(String name, String label) {
+    return base(name, label, FieldKind.TEXT, true, false).build();
+  }
+
+  /** The derived corridor: {@code "{source_country}-{destination_country}"}, editable. */
+  private static FlowFieldDescriptor derivedCorridor() {
+    return base("corridor", "Corridor", FieldKind.TEXT, false, true)
+        .inference(InferenceRule.CORRIDOR_FROM_COUNTRIES)
         .build();
   }
 
@@ -396,7 +742,8 @@ public class FlowCatalogProvider {
       List<String> requiredFields,
       List<String> optionalFields,
       List<String> csvColumns,
-      String partitionKeyField) {
+      String partitionKeyField,
+      @Nullable FlowLifecycle lifecycle) {
     return new FlowCatalogEntry(
         flowType,
         topicCatalog.topicFor(flowType),
@@ -406,7 +753,29 @@ public class FlowCatalogProvider {
         requiredFields,
         optionalFields,
         csvColumns,
-        partitionKeyField);
+        partitionKeyField,
+        lifecycle);
+  }
+
+  private FlowCatalogEntry richHiddenEntry(
+      FlowType flowType,
+      String source,
+      List<FlowFieldDescriptor> fields,
+      List<String> requiredFields,
+      List<String> optionalFields,
+      List<String> csvColumns,
+      String partitionKeyField) {
+    return new FlowCatalogEntry(
+        flowType,
+        topicCatalog.topicFor(flowType),
+        source,
+        false,
+        fields,
+        requiredFields,
+        optionalFields,
+        csvColumns,
+        partitionKeyField,
+        null);
   }
 
   private FlowCatalogEntry hiddenEntry(
@@ -425,6 +794,7 @@ public class FlowCatalogProvider {
         requiredFields,
         optionalFields,
         csvColumns,
-        partitionKeyField);
+        partitionKeyField,
+        null);
   }
 }

@@ -1,0 +1,125 @@
+- Add the ff options to the Transaction type selector
+    - Collection
+    - Settlement
+    - Disbursement
+- Transaction type forms
+    - Collections
+        - Required
+            - Transaction Request ID (i.e transaction_id) (autogen UUID)
+            - Source VA ID (System Account - Float Preferred)
+            - Destination VA ID (Organization Account)
+            - Amount (Default 1000.0000)
+            - A dynamic form for fees (The same fee account can be selected multiple times)
+                - Required
+                    - Amount
+                    - Destination VA ID (System - Fee Revenue Accounts)
+                - Non Required
+                    - Fee Code (Auto Generated)
+                    - Fee Type (Auto - PLATFORM)
+        - Non Required
+            - Provider ID (UUID)
+            - Provider Reference (ULID)
+            - Currency (inferred from source)
+            - Completed At
+            - Merchant Ref ID (ULID)
+            - Commission Split ID
+        - Gross Amount = Amount (i.e net amount) + Sum of All Fee amounts
+    - Disbursement
+        - Three different forms
+        - Disbursement Initiated
+            - Required
+                - Transaction Request ID (i.e transaction_id) (autogen UUID)
+                - Virtual Account ID (Organization Account)
+                - Amount (Principal Amount, Default 1000.0000)
+                - Fee Amount (Fee amount, Default 10)
+            - Non Required
+                - Merchant Reference ID (ULID)
+                - Narration (Auto Gen)
+                - Currency (inferred from source)
+                - Disbursement Subtype (Drop down, DOMESTIC default)
+                - Credit account ID
+                - Credit Provider ID
+                - Source Country (Supported countries Drop down, GH Default)
+                - Destination Country (Supported countries Drop down, GH Default)
+                - Corridor (Auto Gen (Source Country Code)-(Destination Country Code))
+                - Correlation ID (UUID)
+                - Authorised Principal (Auto Gen)
+        - Disbursement Completed
+            - Required
+                - Transaction Request ID (i.e transaction_id) (Same as Transaction ID in initiated)
+                - Source VA ID (Organization Account - Same as VA ID in Initiated - Prepopulated)
+                - Destination VA ID (System Settlement Account)
+                - Reservation ID (Reservation created for the transaction in Initiated) - Prepopulated
+                - Principal Amount (Same value from initiated)
+                - A dynamic form for fees (The same fee account can be selected multiple times)
+                    - Required
+                        - Amount
+                        - Destination VA ID (System - Fee Revenue Accounts)
+                    - Non Required
+                        - Fee Code (Auto Generated)
+                        - Fee Type (Auto - PLATFORM)
+                    - Sum must validate against fee total in the Initiated form (Overridable to test intentional failure
+                      scenarios)
+            - Non Required
+                - Merchant Reference ID (ULID)
+                - Corridor (Auto Gen (Source Country Code)-(Destination Country Code))
+                - Completed At
+                - Recipient Reference
+        - Disbursement Failed
+            - Required
+                - Transaction Request ID (i.e transaction_id) (Same as Transaction ID in initiated)
+                - Virtual Account ID (Organization Account - Same as VA ID in Initiated - Prepopulated)
+                - Reservation ID (Reservation created for the transaction in Initiated) - Prepopulated
+                - Principal Amount (Same value from initiated)
+            - Non Required
+                - Merchant Reference ID (ULID)
+                - Currency (Inferred from VA)
+                - Disbursement Subtype (Same as Initiated)
+                - Failure reason
+                - Failure code
+                - Failed At
+                - Provider ID (Same as Initiated)
+                - Provider Reference ID (Same as Initiated)
+    - Settlement
+        - Three different forms
+        - Settlement Initiated
+            - Required
+                - Transaction Request ID - UUID (i.e settlement_request_id - should be the same for a settlement
+                  lifecycle)
+                - Virtual Account ID (UUID - Organization Account)
+                - Amount (Default 1000)
+            - Non Required
+                - Organization ID
+                - Currency (Inferred from VA)
+                - Destination Bank Account (Auto Gen)
+                - Destination Bank (Drop down - Default ABSA)
+                - Approved By
+                - Approved At
+        - Settlement Completed
+            - Required
+                - Settlement Request ID
+                - Source VA ID (Organization VA - Same as Initiated)
+                - Destination ID (System Settlement Account)
+                - Amount (Same from Initiated)
+            - Non Required
+                - Currency
+                - Completion Reference
+                - Completed By
+                - Completed At
+        - Settlement Failed
+            - Required
+                - Settlement Request ID
+                - Virtual Account ID
+            - Non Required
+                - Organization ID
+                - Failure Reason Code
+                - Failure Note
+                - Marked By
+                - Marked At
+- For Disbursements and Settlements
+    - Operator can decide whether it should fail or succeed or random (system decides whether to fail or succeed - in
+      that case all subsequent forms are inferred)
+    - If the operator selects a fail or a success
+        - After the initiated event is successful
+        - Operator confirms completion/failure form before submission
+    - All chaos options apply

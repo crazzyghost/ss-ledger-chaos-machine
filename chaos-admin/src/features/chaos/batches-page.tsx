@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useSession } from "@/features/auth/session-provider";
-import { isBatchTerminal, listBatches } from "@/lib/api";
+import { isBatchTerminal, listBatches, type BatchRunResponse } from "@/lib/api";
 import { formatDate, formatEnumValue, getStatusBadgeVariant } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { LayersIcon, Plus } from "lucide-react";
@@ -16,6 +16,16 @@ const PER_PAGE = 20;
 
 function getErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : "Something went wrong";
+}
+
+/** "CSV" for CSV batches; "N Times · Burst · Async" for N-Times runs. */
+function runKindLabel(b: BatchRunResponse): string {
+  // N-Times and Lifecycle runs carry pacing/mode; CSV does not.
+  if (b.kind !== "N_TIMES" && b.kind !== "LIFECYCLE") return formatEnumValue(b.kind);
+  return [b.kind, b.pacing, b.mode]
+    .filter((v): v is string => Boolean(v))
+    .map(formatEnumValue)
+    .join(" · ");
 }
 
 export function BatchesPage() {
@@ -53,6 +63,7 @@ export function BatchesPage() {
                     <TR>
                       <TH>ID</TH>
                       <TH>Flow Type</TH>
+                      <TH>Kind</TH>
                       <TH>File</TH>
                       <TH>Status</TH>
                       <TH className="text-right">Total</TH>
@@ -62,7 +73,7 @@ export function BatchesPage() {
                     </TR>
                   </THead>
                   <TBody>
-                    <TableLoadingRows columns={8} rows={6} />
+                    <TableLoadingRows columns={9} rows={6} />
                   </TBody>
                 </Table>
               </TableContainer>
@@ -90,6 +101,7 @@ export function BatchesPage() {
                     <TR>
                       <TH>ID</TH>
                       <TH>Flow Type</TH>
+                      <TH>Kind</TH>
                       <TH>File</TH>
                       <TH>Status</TH>
                       <TH className="text-right">Total</TH>
@@ -117,6 +129,7 @@ export function BatchesPage() {
                           {batch.id}
                         </TD>
                         <TD>{formatEnumValue(batch.flowType)}</TD>
+                        <TD className="text-muted-foreground">{runKindLabel(batch)}</TD>
                         <TD className="max-w-[10rem] truncate text-muted-foreground">
                           {batch.filename ?? "—"}
                         </TD>

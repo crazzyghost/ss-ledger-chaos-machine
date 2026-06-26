@@ -47,6 +47,19 @@ chaos:
       - flowType: COLLECTION_COMPLETED
         slotName: fee
         accountRole: PLATFORM_FEE
+      # Collection destination is the operator-picked organization VA (no role; request-supplied).
+      - flowType: COLLECTION_COMPLETED
+        slotName: destination
+      # Disbursement-completed: organization VA debited (no role; request-supplied), settlement
+      # account credited.
+      - flowType: DISBURSEMENT_COMPLETED
+        slotName: source
+      - flowType: DISBURSEMENT_COMPLETED
+        slotName: destination
+        accountRole: SETTLEMENT_ACCOUNT
+      # Settlement-completed source is the operator-picked organization VA (no role; request-supplied).
+      - flowType: SETTLEMENT_COMPLETED
+        slotName: source
       - flowType: SETTLEMENT_COMPLETED
         slotName: destination
         accountRole: SETTLEMENT_ACCOUNT

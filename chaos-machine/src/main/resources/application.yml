@@ -82,6 +82,17 @@ chaos:
     max-burst: ${CHAOS_LIMITS_MAX_BURST:100}
     max-rate-per-second: ${CHAOS_LIMITS_MAX_RATE_PER_SECOND:1000}
     max-delay-ms: ${CHAOS_LIMITS_MAX_DELAY_MS:30000}
+    max-n-times: ${CHAOS_LIMITS_MAX_N_TIMES:250}
+    max-n-times-sync: ${CHAOS_LIMITS_MAX_N_TIMES_SYNC:25}
+    max-sync-duration-ms: ${CHAOS_LIMITS_MAX_SYNC_DURATION_MS:60000}
+  ledger:
+    reservation:
+      # Page size requested when listing an account's reservations (newest first), then filtered
+      # in-process by transactionRef (the ledger does not filter server-side yet — ADR-018).
+      page-size: ${CHAOS_LEDGER_RESERVATION_PAGE_SIZE:100}
+      poll:
+        interval-ms: ${CHAOS_LEDGER_RESERVATION_POLL_INTERVAL_MS:500}
+        timeout-ms: ${CHAOS_LEDGER_RESERVATION_POLL_TIMEOUT_MS:5000}
   topics:
     organization-onboarded: organization.onboarded
     organization-va-updated: organization.va.updated
@@ -94,7 +105,9 @@ chaos:
     organization-va-settlement-completed: organization.va.settlement.completed
     organization-va-settlement-failed: organization.va.settlement.failed
     collection-completed: collection.completed
+    disbursement-initiated: disbursement.initiated
     disbursement-completed: disbursement.completed
+    disbursement-failed: disbursement.failed
     ledger-account-created: ${CHAOS_LEDGER_ACCOUNT_CREATED_TOPIC:ledger.account.created}
   bootstrap:
     reconcile-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_DELAY_MS:60000}

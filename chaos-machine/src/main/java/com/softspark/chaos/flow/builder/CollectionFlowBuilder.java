@@ -1,10 +1,12 @@
 package com.softspark.chaos.flow.builder;
 
+import com.softspark.chaos.base.Ids;
 import com.softspark.chaos.flow.FlowBuilder;
 import com.softspark.chaos.flow.FlowContext;
 import com.softspark.chaos.flow.FlowRequest;
 import com.softspark.chaos.flow.model.FlowType;
 import com.softspark.chaos.flow.model.v1.CollectionCompletedEventData;
+import com.softspark.chaos.flow.model.v1.TransactionFeeLine;
 import com.softspark.chaos.kafka.EventEnvelope;
 import com.softspark.chaos.kafka.EventMetadata;
 import com.softspark.chaos.kafka.TopicCatalog;
@@ -15,11 +17,20 @@ import org.springframework.stereotype.Component;
 /**
  * Builds {@link EventEnvelope} payloads for {@link FlowType#COLLECTION_COMPLETED} events.
  *
- * <p>Slots: {@code source} (system PLATFORM_FLOAT — debited), {@code destination} (merchant client
- * VA — credited), {@code fee} (system PLATFORM_FEE — receives the platform fee).
+ * <p>Emits the authoritative ledger {@code collection.completed} contract:
+ * {@code transaction_id} (the ledger idempotency key / transaction reference), the
+ * {@code source}/{@code destination} slot VAs, provider ids, a {@code fees[]} list, and a computed
+ * {@code gross_amount = net_amount + Σ fee.amount}.
+ *
+ * <p>Slots: {@code source} (system PLATFORM_FLOAT — debited), {@code destination} (organization VA —
+ * credited). Fee VAs travel per-row inside {@code fees[]}; when no fees are supplied the legacy
+ * gross−net single-fee fallback credits the {@code fee} slot for CSV/batch compatibility.
  */
 @Component
 public class CollectionFlowBuilder implements FlowBuilder<CollectionCompletedEventData> {
+
+  /** The ledger {@code TransactionFeeType} applied to collection fees by default. */
+  private static final String DEFAULT_FEE_TYPE = "PLATFORM";
 
   private final TopicCatalog topicCatalog;
 
@@ -41,37 +52,39 @@ public class CollectionFlowBuilder implements FlowBuilder<CollectionCompletedEve
   public EventEnvelope<CollectionCompletedEventData> build(FlowRequest request, FlowContext ctx) {
     var f = new FlowFields(request.flowFields());
 
-    BigDecimal grossAmount =
-        request.grossAmount() != null
-            ? request.grossAmount()
-            : f.getBigDecimal("gross_amount") != null
-                ? f.getBigDecimal("gross_amount")
-                : BigDecimal.ZERO;
-    BigDecimal netAmount =
-        request.netAmount() != null
-            ? request.netAmount()
-            : f.getBigDecimal("net_amount") != null ? f.getBigDecimal("net_amount") : grossAmount;
+    BigDecimal net = resolveNet(request, f);
+    List<TransactionFeeLine> fees = FeeLines.from(request.fees(), DEFAULT_FEE_TYPE);
 
-    BigDecimal feeAmount = grossAmount.subtract(netAmount);
-    String feeVaId = ctx.resolvedSlots().getOrDefault("fee", "");
-    String feeType = f.getOptional("fee_type") != null ? f.getOptional("fee_type") : "PLATFORM_FEE";
-
-    List<CollectionCompletedEventData.FeeEntry> fees =
-        feeAmount.compareTo(BigDecimal.ZERO) > 0
-            ? List.of(new CollectionCompletedEventData.FeeEntry(feeType, feeAmount, feeVaId))
-            : List.of();
+    BigDecimal gross;
+    if (!fees.isEmpty()) {
+      gross = net.add(FeeLines.sum(fees));
+    } else {
+      // Legacy gross−net single-fee fallback (CSV/batch): derive one fee from gross − net.
+      gross =
+          request.grossAmount() != null
+              ? request.grossAmount()
+              : f.getBigDecimal("gross_amount") != null ? f.getBigDecimal("gross_amount") : net;
+      BigDecimal feeAmount = gross.subtract(net);
+      if (feeAmount.compareTo(BigDecimal.ZERO) > 0) {
+        String feeVaId = ctx.resolvedSlots().getOrDefault("fee", "");
+        fees = List.of(new TransactionFeeLine(DEFAULT_FEE_TYPE, feeAmount, Ids.generateULID(), feeVaId));
+      }
+    }
 
     var data =
         new CollectionCompletedEventData(
-            f.getRequired("collection_request_id"),
+            f.getRequired("transaction_id"),
             ctx.resolvedSlots().getOrDefault("source", ""),
             ctx.resolvedSlots().getOrDefault("destination", ""),
-            grossAmount,
-            netAmount,
+            f.getRequired("provider_id"),
+            f.getRequired("provider_reference_id"),
+            gross,
+            net,
             request.currency() != null ? request.currency() : f.getRequired("currency"),
-            f.getRequired("merchant_reference"),
-            f.getRequired("provider_collection_id"),
-            fees);
+            fees,
+            f.getOptional("commission_split_id"),
+            f.getTimestampOrNow("completed_at"),
+            f.getRequired("merchant_ref_id"));
 
     String idempotencyKey = "collection-completed:" + ctx.eventId();
     var metadata = new EventMetadata(ctx.correlationId(), idempotencyKey, ctx.tenantId());
@@ -89,5 +102,21 @@ public class CollectionFlowBuilder implements FlowBuilder<CollectionCompletedEve
   @Override
   public String partitionKey(FlowContext ctx) {
     return ctx.resolvedSlots().getOrDefault("destination", ctx.eventId());
+  }
+
+  /**
+   * Resolves the net (merchant-credited) amount. The collection form labels its {@code amount} field
+   * "Net Amount", so the top-level request {@code amount} is the net; {@code netAmount} and a
+   * {@code net_amount} flow field are honoured for CSV/batch compatibility.
+   */
+  private static BigDecimal resolveNet(FlowRequest request, FlowFields f) {
+    if (request.netAmount() != null) {
+      return request.netAmount();
+    }
+    if (request.amount() != null) {
+      return request.amount();
+    }
+    BigDecimal fromFields = f.getBigDecimal("net_amount");
+    return fromFields != null ? fromFields : BigDecimal.ZERO;
   }
 }

@@ -219,8 +219,7 @@ public class CountryService {
             .orElseThrow(
                 () -> new BadRequestException("Unknown primary currency: " + primaryCurrencyId));
     if (currency.getStatus() != CurrencyStatus.ACTIVE) {
-      throw new BadRequestException(
-          "Primary currency is not ACTIVE: " + currency.getCode());
+      throw new BadRequestException("Primary currency is not ACTIVE: " + currency.getCode());
     }
   }
 
@@ -252,10 +251,7 @@ public class CountryService {
     if (currencyId == null || currencyId.isBlank()) {
       return null;
     }
-    return currencyRepository
-        .findById(currencyId)
-        .map(this::toCurrencyRef)
-        .orElse(null);
+    return currencyRepository.findById(currencyId).map(this::toCurrencyRef).orElse(null);
   }
 
   private CurrencyRefResponse toCurrencyRef(Currency currency) {

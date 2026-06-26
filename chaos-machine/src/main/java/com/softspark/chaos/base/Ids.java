@@ -1,7 +1,6 @@
 package com.softspark.chaos.base;
 
 import com.github.f4b6a3.ulid.UlidCreator;
-
 import java.util.UUID;
 
 /**
@@ -12,24 +11,22 @@ import java.util.UUID;
  */
 public final class Ids {
 
-    private Ids() {
-    }
+  private Ids() {}
 
-    /**
-     * Generates a new ULID as a string.
-     *
-     * @return a new ULID string identifier
-     */
-    public static String generate() {
-        return UUID.randomUUID().toString();
-    }
+  /**
+   * Generates a new ULID as a string.
+   *
+   * @return a new ULID string identifier
+   */
+  public static String generate() {
+    return UUID.randomUUID().toString();
+  }
 
-    public static String generateUUID() {
-        return UUID.randomUUID().toString();
-    }
+  public static String generateUUID() {
+    return UUID.randomUUID().toString();
+  }
 
-    public static String generateULID() {
-        return UlidCreator.getMonotonicUlid().toString();
-    }
-
+  public static String generateULID() {
+    return UlidCreator.getMonotonicUlid().toString();
+  }
 }

@@ -31,7 +31,7 @@ public class SettlementFailedFlowBuilder implements FlowBuilder<SettlementFailed
 
   @Override
   public String source() {
-    return "settlement-service";
+    return "settlements-service";
   }
 
   @Override
@@ -43,6 +43,7 @@ public class SettlementFailedFlowBuilder implements FlowBuilder<SettlementFailed
             f.getRequired("settlement_request_id"),
             f.getRequired("organization_id"),
             f.getRequired("virtual_account_id"),
+            f.getOptional("destination_va_id"),
             f.getRequired("failure_reason_code"),
             f.getRequired("failure_note"),
             f.getRequired("marked_by"),

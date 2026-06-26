@@ -39,6 +39,9 @@ It is **not** a ledger. It owns no journals or balances. It is a *driver* + *gat
 | Auth | Token introspection via external **AUTH SERVICE** (no local JWT signing) | mirrors ledger ([ADR-006](decisions/006-auth-via-external-auth-service.md)) |
 | Frontend | **React 19 + Vite 6 + react-router 7 + react-query 5 + Tailwind + shadcn/ui** | mirrors swift-admin ([ADR-005](decisions/005-react-vite-shadcn-frontend.md)) |
 | Batch execution | Bounded async workers on **virtual threads** | [ADR-007](decisions/007-csv-batch-execution-model.md) |
+| **Lifecycle flows** | Collection (single) + Settlement/Disbursement **lifecycles** (`initiated`→`completed`\|`failed`); operator outcome **Succeed/Fail** = interactive 2-step wizard, **Random** = unattended server runner (N-Times-capable, run-tracked). `transaction_id` is the carry-over linkage | [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md) ([ADR-017](decisions/017-lifecycle-transaction-flows-and-outcome-orchestration.md)) |
+| **Disbursement reservation** | `reservation_id` sourced via a **ledger reservations read-proxy poll** (ledger keys off `transaction_id` and ignores the inbound `reservation_id`); timeout → manual/placeholder | [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md) ([ADR-018](decisions/018-reservation-id-via-ledger-read-proxy-poll.md)) |
+| **Dynamic fees** | Shared `TransactionFeeLine` (incl. `fee_code`) + typed `PublishFlowRequest.fees[]`; `FEE_LIST`/`COUNTRY`/`ULID` descriptor kinds | [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md) ([ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)) |
 
 ## 3. C4 — System Context & Containers
 
@@ -92,6 +95,11 @@ com.softspark.chaos
 │   └── outbox        # OutboxEvent entity + polling relay → organization.onboarded (incl. currency {id,code})
 ├── flow              # transaction flow engine
 │   ├── controller / dto / service / model(payloads v1) / chaos / registry
+│   │                 # Phase 014: + DISBURSEMENT_INITIATED/_FAILED builders, corrected
+│   │                 #   Collection/Disbursement v1 models, shared TransactionFeeLine (fee_code),
+│   │                 #   PublishFlowRequest.fees[], FlowLifecycle/CarryOver catalog metadata,
+│   │                 #   FieldKind.FEE_LIST/COUNTRY + AutogenRule.ULID, LifecycleRunner
+│   │                 #   (RANDOM unattended → /flows/{lifecycleType}/random-lifecycle)
 │   └── chaos         # duplicate/outOfOrder/malformed/unbalanced/burst/delay
 │                     #   + Phase 013: NTimesOptions (Pacing/ExecutionMode) + NTimesExpander
 │                     #   (1 request → N distinct requests) for the /flows/{type}/n-times route
@@ -103,7 +111,9 @@ com.softspark.chaos
 │   ├── controller / dto / service / model / repository
 ├── auth              # login proxy + AccessTokenFilter + TokenVerifier (AUTH SERVICE)
 └── ledgerproxy       # RestClient read-through to ss-ledger-service (accounts, transactions,
-                      #   + Phase 012: reporting/trial-balance via LedgerReadController + LedgerClient)
+                      #   + Phase 012: reporting/trial-balance via LedgerReadController + LedgerClient
+                      #   + Phase 014: accounts/{id}/reservations read-proxy + ReservationLookup
+                      #     (poll-until-present-or-timeout) for disbursement reservation_id)
 ```
 
 ## 5. Frontend module map (`src/`, follows swift-admin)
@@ -124,6 +134,9 @@ src
     ├── trial-balance      # Phase 012: read-only trial-balance report (period + currency filters, totals, per-account table)
     └── chaos              # Single Flow Run (radio + catalog-driven form + chaos widget) + CSV upload + run results
                            #   Phase 011: transaction-type-form, va-picker, chaos-options-panel (two-column)
+                           #   Phase 014: fee-list-field, country-select, lifecycle-wizard (2-step,
+                           #     outcome-selector, both-forms step 2), reservation-field (poll→manual),
+                           #     RANDOM count → random-lifecycle → run-results handoff
 ```
 
 ## 6. The 12 ledger flows (event surface the chaos machine drives)
@@ -149,12 +162,20 @@ publish the identical `EventEnvelope<OrganizationOnboardedEventData>` shape.
 | Settlement completed | `organization.va.settlement.completed` | settlements-service |
 | Settlement failed | `organization.va.settlement.failed` | settlements-service |
 | Collection completed | `collection.completed` | payments-service |
-| **Disbursement completed** | `disbursement.completed` ² | disbursements-service |
+| **Disbursement initiated / completed / failed** | `disbursement.{initiated,completed,failed}` ² | payment-service |
 
-² `DISBURSEMENT` is a first-class ledger `TransactionTypeEnum`/`EntryTypeEnum` (with
-`BATCH_DISBURSEMENT`) but has **no published sample yet** — the inbound contract is the proposed
-symmetric counterpart to `collection.completed` (money out). See open questions §10.
-Batch disbursement/settlement (`BATCH_*`) are driven via the CSV batch runner, not separate flows.
+² **Resolved in [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md)
+([ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)):** the
+disbursement contract is now **verified against `ss-ledger-service` source** (+
+`bin/kafka-payload-samples.md`). It is a **lifecycle** — `disbursement.initiated` →
+`disbursement.completed` | `disbursement.failed` (`source: payment-service`) — driven from the
+Single Flow Run. The prior chaos `disbursement.completed` model (hand-guessed:
+`disbursement_request_id`/`recipient_account_number`/…) was **wrong** and is rewritten to the
+real fields (`transaction_id`, `reservation_id`, `disbursement_subtype`, `provider_reference_id`,
+`fees[]`, …). The ledger links the lifecycle by `transaction_id` and **ignores** the inbound
+`reservation_id` (see §10.4). Collection (`collection.completed`) is similarly corrected (real
+`transaction_id`/`provider_id`/`fees[]` with `fee_code`/`commission_split_id`). Batch
+disbursement/settlement (`BATCH_*`) remain out of scope here (CSV batch runner).
 
 ## 7. Chart of accounts (system accounts provisioned in the ledger)
 
@@ -195,8 +216,9 @@ config-seeded approach of Phase 002 / task 001.)
 | 011 | [Single Flow Run Redesign](phases/011-single-flow-run-redesign/DESIGN.md) | Reworks the chaos Single-Flow runner into **Single Flow Run**: nav rename, **radio** of 5 transaction types (drops onboarded + va-updated; settlement/collection/disbursement deferred), two-column layout (form left / chaos right), field-descriptor catalog (`fields[]` + `runnerVisible`), required-shown/advanced-collapsed form, autogen UUID request ids, account-kind VA pickers, **client-side** org/currency/tenant inference ([ADR-014](decisions/014-flow-catalog-field-descriptors-and-client-side-inference.md)) |
 | 012 | [Trial Balance Reporting](phases/012-trial-balance-reporting/DESIGN.md) | Adds a **Trial Balance** nav item + read-only report page (period + currency filters, debit/credit totals, balanced indicator, per-account breakdown), backed by a thin read-proxy of the ledger's `GET /api/v0/reporting/trial-balance` exposed as `GET /api/v0/ledger/reporting/trial-balance` — reusing the existing ledger proxy machinery; no new tables/Kafka ([ADR-015](decisions/015-trial-balance-via-ledger-read-proxy.md)) |
 | 013 | [N-Times Chaos Strategy](phases/013-n-times-chaos-strategy/DESIGN.md) | Adds an **N Times** chaos strategy: run a flow N times against the **same** source/destination accounts as N **distinct** transactions (fresh event id → idempotency key + fresh payload `*_request_id` per iteration, shared correlation id) — *distinct from* the duplicate-keyed **Burst**. Three pacings (BURST/LINEAR/RANDOM) and two execution modes: **SYNC** (in-line, sequential, capped) and **ASYNC** (run-tracked, reusing the Phase 003 batch runner; BURST fans out concurrently). Dedicated `POST /api/v0/flows/{flowType}/n-times`; reuses the `autogen` descriptors and the batch run tables behind a `kind` discriminator ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strategy.md)) |
+| 014 | [Collection, Settlement & Disbursement Flows](phases/014-collection-settlement-disbursement-flows/DESIGN.md) | Adds the three deferred transaction types: **Collection** (single, dynamic fee form), **Settlement** & **Disbursement** **lifecycles** (`initiated`→`completed`\|`failed`) with operator outcome (Succeed/Fail = interactive 2-step wizard; Random = unattended, N-Times-capable, run-tracked). **Corrects the Collection/Disbursement inbound models to the authoritative ledger contract** + adds `DISBURSEMENT_INITIATED`/`_FAILED`; sources `reservation_id` via a ledger reservations read-proxy poll; shared `TransactionFeeLine` + typed `fees[]` ([ADR-017](decisions/017-lifecycle-transaction-flows-and-outcome-orchestration.md), [ADR-018](decisions/018-reservation-id-via-ledger-read-proxy-poll.md), [ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)) |
 
-Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013**.
+Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013** → **014**.
 Phase 007 (formerly `025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies
 phases 001–007. Phases 009 and 010 are the latest increment (idea `002_countries_va_via_kafka.md`)
 and run largely in parallel — they converge where the org-VA create form (009) consumes the
@@ -212,7 +234,20 @@ strategy — N *distinct* transactions between the same accounts (vs Burst's dup
 the `flow.chaos` package, with a SYNC in-line path and an ASYNC path that **reuses the Phase 003
 batch runner / run tables** behind a `kind` discriminator (one additive Flyway migration); it
 reuses the Phase 011 `autogen` descriptors for per-iteration id re-rolling and changes no ledger
-flow contract ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strategy.md)).
+flow contract ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strategy.md)). Phase 014
+(idea `007_collection_settlement_disbursement_flow.md`) re-introduces the three flows Phase 011
+deferred — **Collection / Settlement / Disbursement** — flipping their `runnerVisible` flag and
+adding rich descriptors (ADR-014's design intent). Settlement and Disbursement are **lifecycles**
+(`initiated`→`completed`|`failed`) with an operator outcome: Succeed/Fail run as a client-side
+two-step wizard over the unchanged publish path; **Random** runs unattended on a server lifecycle
+runner that reuses the Phase 003/013 batch infra (`RunKind.LIFECYCLE`) and is **N-Times-capable**.
+It also **corrects the previously hand-guessed Collection/Disbursement inbound models** to the
+verified ledger contract (adding `DISBURSEMENT_INITIATED`/`_FAILED`, a shared `TransactionFeeLine`
+with `fee_code`, and a typed `PublishFlowRequest.fees[]`), and sources the disbursement
+`reservation_id` through a thin ledger reservations read-proxy poll
+([ADR-017](decisions/017-lifecycle-transaction-flows-and-outcome-orchestration.md),
+[ADR-018](decisions/018-reservation-id-via-ledger-read-proxy-poll.md),
+[ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)).
 
 ## 9. Cross-cutting non-functional posture
 
@@ -241,11 +276,14 @@ flow contract ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strate
    `account/events/AccountCreatedEventFactory`). The chaos machine now **consumes** it (its first
    Kafka consumer) to materialize VAs; the ledger owns VAs. VA-create + CoA bootstrap issue
    `POST /api/v0/accounts` to the ledger and never persist VAs directly.
-4. **`disbursement.completed` is a proposed contract.** `DISBURSEMENT` exists in the ledger's
-   `TransactionTypeEnum`/`EntryTypeEnum` but has no published payload sample or consumer yet. We
-   model it symmetric to `collection.completed` (money out: org VA debited → platform float
-   credited, fees to revenue, invariant `gross = net + Σfees`, `source = disbursements-service`).
-   Confirm topic name + field set against the ledger when its disbursement consumer lands.
+4. ~~**`disbursement.completed` is a proposed contract.**~~ **Resolved by
+   [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md)
+   ([ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)):** the
+   disbursement (and collection) contracts are now **verified against `ss-ledger-service` source**
+   and `bin/kafka-payload-samples.md`. Disbursement is a **lifecycle** (`initiated`→`completed`|
+   `failed`, `source = payment-service`), not a single symmetric event. The prior hand-guessed
+   chaos model was wrong and is rewritten; the corrected field sets live in
+   [Phase 014 / task 001](phases/014-collection-settlement-disbursement-flows/001-inbound-contract-alignment-and-lifecycle-models.md).
 5. **Chart of accounts is provisioned via the ledger HTTP API** ([Phase 007](phases/007-chart-of-accounts-http-bootstrap/DESIGN.md));
    VA ids are ledger-assigned. If the ledger seeds its own SYSTEM accounts, set
    `chaos.bootstrap.provision-on-startup=false` and the chaos machine adopts existing ids by code.
@@ -278,5 +316,31 @@ flow contract ([ADR-016](decisions/016-n-times-distinct-transaction-chaos-strate
     boot; a cold first boot with no network leaves the country list empty until a retry or
     `POST /api/v0/countries/refresh`. Base URL is configurable to a mirror/self-host; the API
     requires the `fields` param and returns the first-of-many currency as a country's primary.
+
+11. **Disbursement `reservation_id` is ledger-assigned and ledger-ignored on the wire.** Verified
+    in `ss-ledger-service`: the ledger creates the reservation on `disbursement.initiated`
+    (`reservation_id = UUID.randomUUID()`, keyed by `transactionRef = transaction_id`), and on
+    `disbursement.completed`/`failed` it looks the reservation up **by `transaction_id`** and
+    **ignores the inbound `reservation_id`** (mismatches silently use the stored one). So the
+    lifecycle linkage that matters is `transaction_id`; the required `reservation_id` field is
+    cosmetic. [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md)
+    ([ADR-018](decisions/018-reservation-id-via-ledger-read-proxy-poll.md)) still fetches the
+    **real** id for fidelity by polling the ledger's
+    `GET /api/v0/accounts/{accountId}/reservations?transactionRef=…` via a read-proxy (timeout →
+    manual/placeholder). **Confirm that ledger read endpoint's exact path/param/shape** before
+    implementing. The ledger also publishes `ledger.reservation.created` — a future
+    higher-fidelity option not used here.
+
+12. **Settlement-completed destination field is `settlement_va_id` (confirmed).** The chaos
+    `SettlementCompletedFlowBuilder` *and* `bin/kafka-payload-samples.md` currently use
+    **`destination_va_id`** — so today's settlement-completed flow is sending the wrong field
+    name. [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md)
+    ([ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)) corrects it
+    to `settlement_va_id` (+ `source_va_id` + `source_organization_id` + required
+    `completion_reference`).
+
+13. **`disbursement.completed` destination role:** the idea says "System Settlement Account"; the
+    ledger sample comment says platform float. Both are SYSTEM accounts; the slot defaults to
+    `SETTLEMENT_ACCOUNT` and is operator-overridable. Confirm with product.
 
 These are safe-to-proceed defaults; revise here if the complete MANIFEST / ledger contract differs.

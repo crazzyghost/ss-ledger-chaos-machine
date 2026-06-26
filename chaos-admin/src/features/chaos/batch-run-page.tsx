@@ -195,12 +195,22 @@ export function BatchRunPage() {
   }
 
   const isTerminal = isBatchTerminal(batch.status);
+  const isNTimes = batch.kind === "N_TIMES";
+  const isLifecycle = batch.kind === "LIFECYCLE";
+  const isPaced = isNTimes || isLifecycle;
+  const runTitle = isLifecycle ? "Lifecycle Run" : isNTimes ? "N Times Run" : "Batch";
+  const kindLabel = isPaced
+    ? [batch.kind, batch.pacing, batch.mode]
+        .filter(Boolean)
+        .map(v => formatEnumValue(v as string))
+        .join(" · ")
+    : "CSV";
 
   return (
     <Page>
       <PageHeader
-        title={`Batch — ${batch.filename ?? batchId}`}
-        description={`${formatEnumValue(batch.flowType)} · ${batch.total} rows`}
+        title={`${runTitle} — ${batch.filename ?? batchId}`}
+        description={`${formatEnumValue(batch.flowType)} · ${kindLabel} · ${batch.total} rows`}
         leadingActions={
           <Button variant="ghost" size="sm" onClick={() => navigate("/chaos/batches")}>
             <ArrowLeft className="mr-1.5 h-4 w-4" />

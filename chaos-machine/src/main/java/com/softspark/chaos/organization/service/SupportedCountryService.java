@@ -68,8 +68,7 @@ public class SupportedCountryService {
     var country =
         countryRepository
             .findById(request.countryId())
-            .orElseThrow(
-                () -> new NotFoundException("Country not found: " + request.countryId()));
+            .orElseThrow(() -> new NotFoundException("Country not found: " + request.countryId()));
 
     if (supportedCountryRepository.existsByCountryId(country.getCountryId())) {
       throw new ConflictException("Country already supported: " + country.getCountryId());
@@ -100,8 +99,7 @@ public class SupportedCountryService {
     log.debug("Fetching supported country: {}", supportedCountryId);
     var supported = findOrThrow(supportedCountryId);
     var country = countryRepository.findById(supported.getCountryId()).orElse(null);
-    var currency =
-        country != null ? resolveCurrency(country.getPrimaryCurrencyId()) : null;
+    var currency = country != null ? resolveCurrency(country.getPrimaryCurrencyId()) : null;
     return mapToResponse(supported, country, currency);
   }
 
@@ -151,7 +149,8 @@ public class SupportedCountryService {
   /** Resolves supported-country rows into responses, batch-fetching countries + currencies. */
   private List<SupportedCountryResponse> resolveAll(List<SupportedCountry> rows) {
     var countriesById =
-        countryRepository.findAllById(rows.stream().map(SupportedCountry::getCountryId).toList())
+        countryRepository
+            .findAllById(rows.stream().map(SupportedCountry::getCountryId).toList())
             .stream()
             .collect(Collectors.toMap(Country::getCountryId, Function.identity()));
     var currencyIds =
@@ -196,14 +195,21 @@ public class SupportedCountryService {
       List<SupportedCountryResponse> resolved, String sortBy, String sortDir) {
     Comparator<SupportedCountryResponse> comparator =
         switch (sortBy == null ? "" : sortBy) {
-          case "isoCode" -> Comparator.comparing(SupportedCountryServiceComparators::isoCode,
-              Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
-          case "status" -> Comparator.comparing(
-              r -> r.status() != null ? r.status().name() : "", String.CASE_INSENSITIVE_ORDER);
-          case "createdAt" -> Comparator.comparing(
-              SupportedCountryResponse::createdAt, Comparator.nullsLast(Comparator.naturalOrder()));
-          default -> Comparator.comparing(SupportedCountryServiceComparators::countryName,
-              Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+          case "isoCode" ->
+              Comparator.comparing(
+                  SupportedCountryServiceComparators::isoCode,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+          case "status" ->
+              Comparator.comparing(
+                  r -> r.status() != null ? r.status().name() : "", String.CASE_INSENSITIVE_ORDER);
+          case "createdAt" ->
+              Comparator.comparing(
+                  SupportedCountryResponse::createdAt,
+                  Comparator.nullsLast(Comparator.naturalOrder()));
+          default ->
+              Comparator.comparing(
+                  SupportedCountryServiceComparators::countryName,
+                  Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
         };
     if ("desc".equalsIgnoreCase(sortDir)) {
       comparator = comparator.reversed();

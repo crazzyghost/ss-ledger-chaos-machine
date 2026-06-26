@@ -11,12 +11,14 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.ReservationResponse;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -157,6 +159,38 @@ public class LedgerReadController {
           ledgerClient.getAccountTransactionHistory(
               token, id, from, to, entryType, direction, transactionRef, cursor, size);
       return ResponseEntity.ok(toCursorResponse(result));
+    } catch (CircuitBreakerOpenException e) {
+      throw new InternalServerErrorException("Ledger service temporarily unavailable");
+    }
+  }
+
+  /**
+   * Lists an account's reservations from the ledger, filtered by {@code transactionRef}.
+   *
+   * <p>Backs the disbursement lifecycle's {@code reservation_id} sourcing (ADR-018): after a
+   * {@code disbursement.initiated} is published, the wizard polls this endpoint with the org VA id
+   * and the minted {@code transaction_id} until the ledger-created reservation appears. The ledger
+   * does not filter by {@code transactionRef} server-side yet, so {@link LedgerClient} fetches the
+   * newest page and filters in-process (the param is forwarded for forward-compat).
+   *
+   * @param id the ledger account UUID (the disbursement's org VA)
+   * @param transactionRef the transaction reference to match (= the disbursement {@code
+   *     transaction_id}); when omitted the account's reservations are returned unfiltered
+   * @param request the HTTP request
+   * @return the matching reservations (empty if none)
+   */
+  @GetMapping("/accounts/{id}/reservations")
+  @Operation(
+      summary = "List account reservations",
+      description =
+          "Proxy to the ledger's account reservations, filtered by transactionRef in-process")
+  public ResponseEntity<List<ReservationResponse>> getAccountReservations(
+      @PathVariable String id,
+      @RequestParam(required = false) String transactionRef,
+      HttpServletRequest request) {
+    var token = extractToken(request);
+    try {
+      return ResponseEntity.ok(ledgerClient.getReservations(token, id, transactionRef));
     } catch (CircuitBreakerOpenException e) {
       throw new InternalServerErrorException("Ledger service temporarily unavailable");
     }

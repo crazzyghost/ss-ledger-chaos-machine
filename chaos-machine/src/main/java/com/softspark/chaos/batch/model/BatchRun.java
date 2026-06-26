@@ -2,6 +2,7 @@ package com.softspark.chaos.batch.model;
 
 import com.softspark.chaos.base.InstantStringConverter;
 import com.softspark.chaos.batch.enumeration.BatchRunStatus;
+import com.softspark.chaos.batch.enumeration.RunKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
@@ -10,6 +11,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import org.springframework.lang.Nullable;
 
 /**
  * JPA entity representing a CSV batch publishing run.
@@ -29,7 +31,22 @@ public class BatchRun {
   private String flowType;
 
   @Column(name = "filename")
+  @Nullable
   private String filename;
+
+  @Enumerated(EnumType.STRING)
+  @Column(name = "kind")
+  private RunKind kind = RunKind.CSV;
+
+  /** Pacing name for N-Times runs ({@code BURST}/{@code LINEAR}/{@code RANDOM}); null for CSV. */
+  @Column(name = "pacing")
+  @Nullable
+  private String pacing;
+
+  /** Execution mode name for N-Times runs ({@code SYNC}/{@code ASYNC}); null for CSV. */
+  @Column(name = "mode")
+  @Nullable
+  private String mode;
 
   @Column(name = "total")
   private int total;
@@ -71,12 +88,39 @@ public class BatchRun {
     this.flowType = flowType;
   }
 
+  @Nullable
   public String getFilename() {
     return filename;
   }
 
-  public void setFilename(String filename) {
+  public void setFilename(@Nullable String filename) {
     this.filename = filename;
+  }
+
+  public RunKind getKind() {
+    return kind;
+  }
+
+  public void setKind(RunKind kind) {
+    this.kind = kind;
+  }
+
+  @Nullable
+  public String getPacing() {
+    return pacing;
+  }
+
+  public void setPacing(@Nullable String pacing) {
+    this.pacing = pacing;
+  }
+
+  @Nullable
+  public String getMode() {
+    return mode;
+  }
+
+  public void setMode(@Nullable String mode) {
+    this.mode = mode;
   }
 
   public int getTotal() {

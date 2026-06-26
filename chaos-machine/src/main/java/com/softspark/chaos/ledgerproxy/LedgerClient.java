@@ -9,12 +9,16 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerSpringPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.ReservationResponse;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import jakarta.annotation.Nullable;
 import java.time.Instant;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
@@ -34,18 +38,22 @@ public class LedgerClient {
   private final RestClient restClient;
   private final LedgerProxyProperties proxyProperties;
   private final CircuitBreaker circuitBreaker;
+  private final int reservationPageSize;
 
   /**
    * Constructs the client.
    *
    * @param restClient the ledger proxy {@link RestClient} bean
    * @param proxyProperties the proxy configuration
+   * @param reservationPageSize the page size requested when listing reservations (newest first)
    */
   public LedgerClient(
       @Qualifier("ledgerProxyRestClient") RestClient restClient,
-      LedgerProxyProperties proxyProperties) {
+      LedgerProxyProperties proxyProperties,
+      @Value("${chaos.ledger.reservation.page-size:100}") int reservationPageSize) {
     this.restClient = restClient;
     this.proxyProperties = proxyProperties;
+    this.reservationPageSize = reservationPageSize;
     var cb = proxyProperties.circuitBreaker();
     this.circuitBreaker =
         new CircuitBreaker(cb.failureThreshold(), cb.successThreshold(), cb.openDurationMs());
@@ -394,6 +402,73 @@ public class LedgerClient {
                           "Ledger error: " + resp.getStatusCode().value());
                     })
                 .body(TrialBalanceDto.class));
+  }
+
+  /**
+   * Lists an account's reservations from the ledger, filtered by {@code transactionRef} in-process.
+   *
+   * <p>Contract (verified against {@code ss-ledger-service}): the ledger's
+   * {@code GET /api/v0/accounts/{accountId}/reservations} returns a <em>raw</em> Spring {@code Page}
+   * ({@code content}/{@code totalElements}/…) and does <strong>not</strong> filter by
+   * {@code transactionRef} server-side yet. This method requests the newest page
+   * ({@code sort=createdAt,desc}, generous size) — a reservation just created for our disbursement is
+   * the newest — and filters the returned {@code content} by {@code transactionRef} here. The
+   * {@code transactionRef} query param is still forwarded so the call becomes O(1) at the ledger the
+   * day server-side filtering lands, with no change here.
+   *
+   * @param callerToken the caller's bearer token
+   * @param accountId the ledger account UUID (the disbursement's org VA)
+   * @param transactionRef the transaction reference to match (= the disbursement {@code
+   *     transaction_id}); when null/blank the unfiltered page content is returned
+   * @return the matching reservations (filtered by {@code transactionRef}); empty if none
+   * @throws NotFoundException if the ledger returns 4xx (e.g. unknown account)
+   * @throws InternalServerErrorException if the ledger returns 5xx
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public List<ReservationResponse> getReservations(
+      String callerToken, String accountId, @Nullable String transactionRef) {
+    var token = resolveToken(callerToken);
+    LedgerSpringPageDto<ReservationResponse> page =
+        circuitBreaker.execute(
+            () ->
+                restClient
+                    .get()
+                    .uri(
+                        uriBuilder -> {
+                          var builder =
+                              uriBuilder
+                                  .path("/api/v0/accounts/{id}/reservations")
+                                  .queryParam("size", reservationPageSize)
+                                  .queryParam("sort", "createdAt,desc");
+                          if (transactionRef != null && !transactionRef.isBlank()) {
+                            builder = builder.queryParam("transactionRef", transactionRef);
+                          }
+                          return builder.build(accountId);
+                        })
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .onStatus(
+                        HttpStatusCode::is4xxClientError,
+                        (req, resp) -> {
+                          throw new NotFoundException(
+                              "Ledger returned: " + resp.getStatusCode().value());
+                        })
+                    .onStatus(
+                        HttpStatusCode::is5xxServerError,
+                        (req, resp) -> {
+                          throw new InternalServerErrorException(
+                              "Ledger error: " + resp.getStatusCode().value());
+                        })
+                    .body(
+                        new ParameterizedTypeReference<
+                            LedgerSpringPageDto<ReservationResponse>>() {}));
+
+    List<ReservationResponse> content =
+        page != null && page.content() != null ? page.content() : List.of();
+    if (transactionRef == null || transactionRef.isBlank()) {
+      return content;
+    }
+    return content.stream().filter(r -> transactionRef.equals(r.transactionRef())).toList();
   }
 
   private String resolveToken(String callerToken) {

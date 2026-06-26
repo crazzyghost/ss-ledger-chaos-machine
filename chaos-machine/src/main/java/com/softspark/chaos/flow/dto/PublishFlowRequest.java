@@ -3,6 +3,7 @@ package com.softspark.chaos.flow.dto;
 import com.softspark.chaos.flow.chaos.ChaosOptions;
 import io.soabase.recordbuilder.core.RecordBuilder;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import org.springframework.lang.Nullable;
 
@@ -19,6 +20,8 @@ import org.springframework.lang.Nullable;
  * @param slotOverrides explicit VA id overrides keyed by slot name; defaults to empty map
  * @param chaos optional chaos injection configuration
  * @param flowFields flow-specific fields keyed by snake_case name; defaults to empty map
+ * @param fees optional typed fee rows for fee-bearing flows (collection, disbursement-completed);
+ *     defaults to an empty list
  */
 @RecordBuilder
 public record PublishFlowRequest(
@@ -31,7 +34,8 @@ public record PublishFlowRequest(
     @Nullable String currency,
     Map<String, String> slotOverrides,
     @Nullable ChaosOptions chaos,
-    Map<String, Object> flowFields) {
+    Map<String, Object> flowFields,
+    List<FeeInput> fees) {
 
   public PublishFlowRequest {
     if (slotOverrides == null) {
@@ -39,6 +43,9 @@ public record PublishFlowRequest(
     }
     if (flowFields == null) {
       flowFields = Map.of();
+    }
+    if (fees == null) {
+      fees = List.of();
     }
   }
 }

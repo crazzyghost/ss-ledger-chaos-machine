@@ -14,10 +14,11 @@ import java.math.BigDecimal;
  * @param settlementRequestId the settlement request identifier
  * @param sourceOrganizationId the organization whose VA was settled
  * @param sourceVaId the client virtual account debited
- * @param destinationVaId the system SETTLEMENT_ACCOUNT virtual account credited
+ * @param settlementVaId the system SETTLEMENT_ACCOUNT virtual account credited (the ledger's
+ *     confirmed destination field name — <em>not</em> {@code destination_va_id})
  * @param amount the settled amount
  * @param currency the ISO-4217 currency code
- * @param completionReference the external completion reference
+ * @param completionReference the external completion reference (the transaction reference)
  * @param completedBy the user or system that completed the settlement
  * @param completedAt ISO-8601 timestamp of completion
  */
@@ -27,7 +28,7 @@ public record SettlementCompletedEventData(
     String settlementRequestId,
     String sourceOrganizationId,
     String sourceVaId,
-    String destinationVaId,
+    String settlementVaId,
     BigDecimal amount,
     String currency,
     String completionReference,

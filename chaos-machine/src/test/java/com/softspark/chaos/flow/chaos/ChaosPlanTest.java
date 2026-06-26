@@ -39,7 +39,7 @@ class ChaosPlanTest {
     mapper.registerModule(new JavaTimeModule());
     mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-    ChaosLimits limits = new ChaosLimits(10, 100, 1000, 30000L);
+    ChaosLimits limits = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L);
     chaosPlan = new ChaosPlan(limits, mapper);
 
     var meta = new EventMetadata("corr-1", "idem-key:EVT-001", "tenant-1");
@@ -94,7 +94,8 @@ class ChaosPlanTest {
     @DisplayName("produces n copies with same envelope and DUPLICATE label")
     void producesNCopies() {
       var options =
-          new ChaosOptions(new ChaosOptions.DuplicateOptions(3), null, null, null, null, null);
+          new ChaosOptions(
+              new ChaosOptions.DuplicateOptions(3), null, null, null, null, null, null);
       var sends = chaosPlan.expand(baseEnvelope, ctx, options);
 
       assertThat(sends).hasSize(3);
@@ -110,7 +111,8 @@ class ChaosPlanTest {
     @DisplayName("throws BadRequestException when count exceeds maxDuplicates")
     void throwsWhenExceedsLimit() {
       var options =
-          new ChaosOptions(new ChaosOptions.DuplicateOptions(99), null, null, null, null, null);
+          new ChaosOptions(
+              new ChaosOptions.DuplicateOptions(99), null, null, null, null, null, null);
       assertThatThrownBy(() -> chaosPlan.expand(baseEnvelope, ctx, options))
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("exceeds limit");
@@ -127,7 +129,7 @@ class ChaosPlanTest {
       var mutations = List.of("negativeAmount");
       var options =
           new ChaosOptions(
-              null, null, new ChaosOptions.MalformedOptions(mutations), null, null, null);
+              null, null, new ChaosOptions.MalformedOptions(mutations), null, null, null, null);
       var sends = chaosPlan.expand(baseEnvelope, ctx, options);
 
       assertThat(sends).hasSize(1);
@@ -144,7 +146,8 @@ class ChaosPlanTest {
     @DisplayName("produces count sends with unique event ids and BURST label")
     void producesCountSendsWithUniqueIds() {
       var options =
-          new ChaosOptions(null, null, null, null, new ChaosOptions.BurstOptions(5, 100), null);
+          new ChaosOptions(
+              null, null, null, null, new ChaosOptions.BurstOptions(5, 100), null, null);
       var sends = chaosPlan.expand(baseEnvelope, ctx, options);
 
       assertThat(sends).hasSize(5);
@@ -157,7 +160,8 @@ class ChaosPlanTest {
     @DisplayName("throws BadRequestException when count exceeds maxBurst")
     void throwsWhenCountExceedsLimit() {
       var options =
-          new ChaosOptions(null, null, null, null, new ChaosOptions.BurstOptions(999, 100), null);
+          new ChaosOptions(
+              null, null, null, null, new ChaosOptions.BurstOptions(999, 100), null, null);
       assertThatThrownBy(() -> chaosPlan.expand(baseEnvelope, ctx, options))
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("exceeds limit");
@@ -167,7 +171,8 @@ class ChaosPlanTest {
     @DisplayName("throws BadRequestException when rate exceeds maxRatePerSecond")
     void throwsWhenRateExceedsLimit() {
       var options =
-          new ChaosOptions(null, null, null, null, new ChaosOptions.BurstOptions(5, 9999), null);
+          new ChaosOptions(
+              null, null, null, null, new ChaosOptions.BurstOptions(5, 9999), null, null);
       assertThatThrownBy(() -> chaosPlan.expand(baseEnvelope, ctx, options))
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("exceeds limit");
@@ -182,7 +187,8 @@ class ChaosPlanTest {
     @DisplayName("produces single send with non-zero delay and DELAY label")
     void producesSingleSendWithDelay() {
       var options =
-          new ChaosOptions(null, null, null, null, null, new ChaosOptions.DelayOptions(500L, 0L));
+          new ChaosOptions(
+              null, null, null, null, null, new ChaosOptions.DelayOptions(500L, 0L), null);
       var sends = chaosPlan.expand(baseEnvelope, ctx, options);
 
       assertThat(sends).hasSize(1);
@@ -194,7 +200,8 @@ class ChaosPlanTest {
     @DisplayName("throws BadRequestException when delay exceeds maxDelayMs")
     void throwsWhenDelayExceedsLimit() {
       var options =
-          new ChaosOptions(null, null, null, null, null, new ChaosOptions.DelayOptions(40000L, 0L));
+          new ChaosOptions(
+              null, null, null, null, null, new ChaosOptions.DelayOptions(40000L, 0L), null);
       assertThatThrownBy(() -> chaosPlan.expand(baseEnvelope, ctx, options))
           .isInstanceOf(BadRequestException.class)
           .hasMessageContaining("exceeds limit");
@@ -214,6 +221,7 @@ class ChaosPlanTest {
               null,
               null,
               new ChaosOptions.UnbalancedOptions(new BigDecimal("5.00")),
+              null,
               null,
               null);
       var sends = chaosPlan.expand(baseEnvelope, ctx, options);
@@ -248,6 +256,7 @@ class ChaosPlanTest {
               null,
               null,
               new ChaosOptions.UnbalancedOptions(new BigDecimal("5.00")),
+              null,
               null,
               null);
       var sends = chaosPlan.expand(baseEnvelope, unsupportedCtx, options);

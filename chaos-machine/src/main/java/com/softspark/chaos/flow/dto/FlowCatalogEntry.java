@@ -21,6 +21,8 @@ import java.util.List;
  * @param optionalFields list of optional {@code flowFields} keys (legacy)
  * @param csvColumns column names expected in a CSV batch file for this flow
  * @param partitionKeyField the {@code flowFields} key used as the Kafka partition key
+ * @param lifecycle the lifecycle grouping for a multi-step transaction type (set on the
+ *     {@code initiated} entry); {@code null} for single-shot flows
  */
 @RecordBuilder
 public record FlowCatalogEntry(
@@ -32,4 +34,5 @@ public record FlowCatalogEntry(
     List<String> requiredFields,
     List<String> optionalFields,
     List<String> csvColumns,
-    String partitionKeyField) {}
+    String partitionKeyField,
+    FlowLifecycle lifecycle) {}

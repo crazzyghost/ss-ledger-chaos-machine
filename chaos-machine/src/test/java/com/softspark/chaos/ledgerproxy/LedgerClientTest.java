@@ -73,7 +73,7 @@ class LedgerClientTest {
     server = MockRestServiceServer.bindTo(builder).build();
     var restClient = builder.build();
     var props = new LedgerProxyProperties(true, null, new CircuitBreakerConfig(5, 2, 30_000));
-    client = new LedgerClient(restClient, props);
+    client = new LedgerClient(restClient, props, 100);
   }
 
   @Test

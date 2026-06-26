@@ -131,8 +131,7 @@ public class ReferenceDataSeeder implements ApplicationRunner {
     int currenciesUpserted = (int) (currencyRepository.count() - currenciesBefore);
     int countriesUpserted = (int) (countryRepository.count() - countriesBefore);
 
-    return new SeedSummary(
-        countries.size(), currenciesUpserted, countriesUpserted, false, null);
+    return new SeedSummary(countries.size(), currenciesUpserted, countriesUpserted, false, null);
   }
 
   /**
@@ -142,7 +141,8 @@ public class ReferenceDataSeeder implements ApplicationRunner {
    * @param currencies the restcountries.com {@code currencies} map (may be null/empty)
    * @return the primary currency ID, or {@code null} when the country has no currencies
    */
-  private String upsertCurrenciesAndResolvePrimary(Map<String, RestCountry.RestCurrency> currencies) {
+  private String upsertCurrenciesAndResolvePrimary(
+      Map<String, RestCountry.RestCurrency> currencies) {
     if (currencies == null || currencies.isEmpty()) {
       return null;
     }

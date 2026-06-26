@@ -13,11 +13,7 @@ import io.soabase.recordbuilder.core.RecordBuilder;
  */
 @RecordBuilder
 public record SeedSummary(
-    int fetched,
-    int currenciesUpserted,
-    int countriesUpserted,
-    boolean skipped,
-    String error) {
+    int fetched, int currenciesUpserted, int countriesUpserted, boolean skipped, String error) {
 
   /** A summary representing a skipped run. */
   public static SeedSummary ofSkipped() {

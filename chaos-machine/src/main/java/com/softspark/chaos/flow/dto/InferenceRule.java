@@ -16,5 +16,11 @@ public enum InferenceRule {
   /** Currency of the selected source VA. */
   CURRENCY_FROM_SOURCE_VA,
   /** Organization id of the source VA, only when its ownership is {@code ORGANIZATION}. */
-  TENANT_FROM_SOURCE_VA
+  TENANT_FROM_SOURCE_VA,
+  /**
+   * Derived corridor {@code "{source_country}-{destination_country}"}, recomputed from the
+   * {@code source_country}/{@code destination_country} field values (not a VA). Editable: a manual
+   * edit wins until the operator changes a country again.
+   */
+  CORRIDOR_FROM_COUNTRIES
 }

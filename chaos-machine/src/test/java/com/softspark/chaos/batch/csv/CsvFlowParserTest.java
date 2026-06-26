@@ -43,10 +43,9 @@ class CsvFlowParserTest {
     @DisplayName("parses rows into FlowRequests with flowFields populated")
     void parsesRowsWithFlowFields() throws IOException {
       String content =
-          "collection_request_id,gross_amount,net_amount,currency,merchant_reference,"
-              + "provider_collection_id\n"
-              + "COL-001,110.00,100.00,GHS,MERCH-REF-1,PROV-001\n"
-              + "COL-002,220.00,200.00,GHS,MERCH-REF-2,PROV-002\n";
+          "transaction_id,net_amount,currency,provider_id,provider_reference_id,merchant_ref_id\n"
+              + "TXN-001,100.00,GHS,PROVIDER_GH,PROV-001,MERCH-REF-1\n"
+              + "TXN-002,200.00,GHS,PROVIDER_GH,PROV-002,MERCH-REF-2\n";
 
       var rows = csvFlowParser.parse(csv(content), FlowType.COLLECTION_COMPLETED);
 
@@ -55,9 +54,8 @@ class CsvFlowParserTest {
 
       var row1 = rows.get(0);
       assertThat(row1.rowNumber()).isEqualTo(1);
-      assertThat(row1.flowRequest().flowFields()).containsEntry("collection_request_id", "COL-001");
+      assertThat(row1.flowRequest().flowFields()).containsEntry("transaction_id", "TXN-001");
       assertThat(row1.flowRequest().currency()).isEqualTo("GHS");
-      assertThat(row1.flowRequest().grossAmount().toPlainString()).isEqualTo("110.00");
       assertThat(row1.flowRequest().netAmount().toPlainString()).isEqualTo("100.00");
     }
 
@@ -65,11 +63,10 @@ class CsvFlowParserTest {
     @DisplayName("skips blank lines")
     void skipsBlankLines() throws IOException {
       String content =
-          "collection_request_id,gross_amount,net_amount,currency,merchant_reference,"
-              + "provider_collection_id\n"
-              + "COL-001,110.00,100.00,GHS,MERCH-REF-1,PROV-001\n"
+          "transaction_id,net_amount,currency,provider_id,provider_reference_id,merchant_ref_id\n"
+              + "TXN-001,100.00,GHS,PROVIDER_GH,PROV-001,MERCH-REF-1\n"
               + "\n"
-              + "COL-002,220.00,200.00,GHS,MERCH-REF-2,PROV-002\n";
+              + "TXN-002,200.00,GHS,PROVIDER_GH,PROV-002,MERCH-REF-2\n";
 
       var rows = csvFlowParser.parse(csv(content), FlowType.COLLECTION_COMPLETED);
 
@@ -95,10 +92,9 @@ class CsvFlowParserTest {
     @DisplayName("captures per-row parse error without aborting parsing")
     void capturesPerRowError() throws IOException {
       String content =
-          "collection_request_id,gross_amount,net_amount,currency,merchant_reference,"
-              + "provider_collection_id\n"
-              + "COL-001,not-a-number,100.00,GHS,MERCH-REF-1,PROV-001\n"
-              + "COL-002,220.00,200.00,GHS,MERCH-REF-2,PROV-002\n";
+          "transaction_id,net_amount,currency,provider_id,provider_reference_id,merchant_ref_id\n"
+              + "TXN-001,not-a-number,GHS,PROVIDER_GH,PROV-001,MERCH-REF-1\n"
+              + "TXN-002,200.00,GHS,PROVIDER_GH,PROV-002,MERCH-REF-2\n";
 
       var rows = csvFlowParser.parse(csv(content), FlowType.COLLECTION_COMPLETED);
 

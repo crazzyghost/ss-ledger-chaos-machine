@@ -14,7 +14,8 @@ public sealed interface ChaosStrategy
         ChaosStrategy.Malformed,
         ChaosStrategy.Unbalanced,
         ChaosStrategy.Burst,
-        ChaosStrategy.Delay {
+        ChaosStrategy.Delay,
+        ChaosStrategy.NTimes {
 
   /**
    * Publish {@code count} identical copies of the base event with the same idempotency key.
@@ -59,4 +60,13 @@ public sealed interface ChaosStrategy
    * @param jitterMs random additional jitter in milliseconds
    */
   record Delay(long delayMs, long jitterMs) implements ChaosStrategy {}
+
+  /**
+   * Run a flow {@code count} times against the same accounts, producing {@code count}
+   * genuinely-distinct transactions paced by {@code pacing}.
+   *
+   * @param count number of distinct transactions to produce
+   * @param pacing inter-event timing
+   */
+  record NTimes(int count, Pacing pacing) implements ChaosStrategy {}
 }
