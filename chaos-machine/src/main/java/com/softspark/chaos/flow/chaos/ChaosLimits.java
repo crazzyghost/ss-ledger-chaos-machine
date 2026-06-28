@@ -18,6 +18,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param maxNTimesSync maximum iteration count allowed for a <em>synchronous</em> N-Times run
  * @param maxSyncDurationMs maximum projected wall-clock (count × effective-max-gap) allowed for a
  *     synchronous N-Times run before it must be moved to ASYNC
+ * @param maxBatchItems maximum number of items N allowed in a single batch disbursement (Phase 016);
+ *     over-cap N (or an automatic {@code passCount} outside {@code [0, N]}) is rejected with a 400
  */
 @ConfigurationProperties(prefix = "chaos.limits")
 public record ChaosLimits(
@@ -27,4 +29,5 @@ public record ChaosLimits(
     @DefaultValue("30000") long maxDelayMs,
     @DefaultValue("250") int maxNTimes,
     @DefaultValue("25") int maxNTimesSync,
-    @DefaultValue("60000") long maxSyncDurationMs) {}
+    @DefaultValue("60000") long maxSyncDurationMs,
+    @DefaultValue("100") int maxBatchItems) {}

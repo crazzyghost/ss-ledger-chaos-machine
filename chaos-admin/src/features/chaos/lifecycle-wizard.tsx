@@ -35,6 +35,7 @@ import {
 } from "./chaos-options-panel";
 import { OutcomeSelector, type Outcome } from "./outcome-selector";
 import { TransactionTypeForm, type AssembledFlow } from "./transaction-type-form";
+import { useReservationWatch } from "./use-reservation-watch";
 
 const EMPTY_ASSEMBLED: AssembledFlow = {
   slotOverrides: {},
@@ -151,6 +152,16 @@ export function LifecycleWizard({
 
   const orgVaId = step1Values?.["virtual_account_id"] ?? "";
   const transactionId = step1Values?.["transaction_id"] ?? "";
+
+  // Phase 019: once the initiated event is published, watch the reservation projection by this flow's
+  // request id (disbursement → transaction_id, settlement → settlement_request_id) to toast on the
+  // reservation's create + release/expire/capture. Independent of the ADR-018 sourcing poll below.
+  const reservationWatchRef = useMemo(() => {
+    if (!step1Values) return null;
+    const field = isDisbursement ? "transaction_id" : "settlement_request_id";
+    return step1Values[field] || null;
+  }, [step1Values, isDisbursement]);
+  useReservationWatch(reservationWatchRef);
 
   const reservationQuery = useQuery({
     queryKey: ["reservation", orgVaId, transactionId],

@@ -2,6 +2,7 @@ import { useSession } from "@/features/auth/session-provider";
 import { cn } from "@/lib/utils";
 import {
   Activity,
+  AlertTriangle,
   BookOpen,
   Building2,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   Wallet
 } from "lucide-react";
 import { Link, NavLink, Outlet } from "react-router-dom";
+import { Toaster } from "sonner";
 
 type NavItem = {
   to: string;
@@ -26,7 +28,8 @@ type NavItem = {
 
 const operateNavigation: NavItem[] = [
   { to: "/chaos/single-flow", label: "Single Flow Run", icon: Play },
-  { to: "/chaos/batches", label: "Batches", icon: LayersIcon }
+  { to: "/chaos/batches", label: "Batches", icon: LayersIcon },
+  { to: "/chaos/dlq", label: "Dead Letter Queue", icon: AlertTriangle }
 ];
 
 const accountsNavigation: NavItem[] = [
@@ -165,6 +168,8 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      {/* Global toaster — failure / balance / reservation watches surface here (Phases 017–019) */}
+      <Toaster richColors position="top-right" closeButton />
     </div>
   );
 }

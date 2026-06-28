@@ -132,6 +132,7 @@ class LedgerReadControllerTest {
           new BigDecimal("100.00"),
           BigDecimal.ZERO,
           BigDecimal.ZERO,
+          null,
           "Collection completed",
           null,
           1L,

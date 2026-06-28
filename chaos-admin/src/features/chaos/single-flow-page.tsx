@@ -19,11 +19,15 @@ import {
   needsConfirm,
   type ChaosFormState
 } from "@/features/chaos/chaos-options-panel";
+import { BatchDisbursementWizard } from "@/features/chaos/batch-disbursement-wizard";
 import { LifecycleWizard } from "@/features/chaos/lifecycle-wizard";
 import {
   TransactionTypeForm,
   type AssembledFlow
 } from "@/features/chaos/transaction-type-form";
+import { useBalanceUpdateWatch } from "@/features/chaos/use-balance-update-watch";
+import { useTransactionFailureWatch } from "@/features/chaos/use-transaction-failure-watch";
+import { BALANCE_SKEW_MS } from "@/features/chaos/watch-config";
 import {
   getFlowCatalog,
   publishNTimes,
@@ -31,7 +35,8 @@ import {
   type BatchRunResponse,
   type FlowResult,
   type NTimesSyncResult,
-  type PublishFlowRequest
+  type PublishFlowRequest,
+  type TransactionFailureResponse
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -48,7 +53,8 @@ const RUNNER_ORDER = [
   "TREASURY_TRANSFER_COMPLETED",
   "COLLECTION_COMPLETED",
   "SETTLEMENT_INITIATED",
-  "DISBURSEMENT_INITIATED"
+  "DISBURSEMENT_INITIATED",
+  "DISBURSEMENT_BATCH_RESERVATION_REQUEST"
 ] as const;
 
 const FLOW_LABELS: Record<string, string> = {
@@ -59,7 +65,8 @@ const FLOW_LABELS: Record<string, string> = {
   TREASURY_TRANSFER_COMPLETED: "Treasury Transfer",
   COLLECTION_COMPLETED: "Collection",
   SETTLEMENT_INITIATED: "Settlement",
-  DISBURSEMENT_INITIATED: "Disbursement"
+  DISBURSEMENT_INITIATED: "Disbursement",
+  DISBURSEMENT_BATCH_RESERVATION_REQUEST: "Batch Disbursement"
 };
 
 const DEFAULT_FLOW = "TOPUP_CONFIRMED";
@@ -79,14 +86,24 @@ const EMPTY_ASSEMBLED: AssembledFlow = {
   missingRequired: []
 };
 
-function FlowResultCard({ result }: { result: FlowResult }) {
+function FlowResultCard({
+  result,
+  failure
+}: {
+  result: FlowResult;
+  failure?: TransactionFailureResponse | null;
+}) {
+  const ledgerFailed = Boolean(failure);
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>Flow Result</CardTitle>
-        <Badge variant={result.status === "PUBLISHED" ? "success" : "destructive"}>
-          {result.status}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={result.status === "PUBLISHED" ? "success" : "destructive"}>
+            {result.status}
+          </Badge>
+          {ledgerFailed && <Badge variant="destructive">Failed @ ledger</Badge>}
+        </div>
       </CardHeader>
       <CardContent>
         <dl className="grid grid-cols-2 gap-3">
@@ -108,19 +125,40 @@ function FlowResultCard({ result }: { result: FlowResult }) {
           ))}
         </dl>
         {result.error && <InlineNotice description={result.error} tone="danger" className="mt-3" />}
+        {ledgerFailed && failure && (
+          <InlineNotice
+            title={`Failed at ledger${failure.failureCode ? `: ${failure.failureCode}` : ""}`}
+            description={failure.failureReason ?? "The ledger rejected this transaction."}
+            tone="danger"
+            className="mt-3"
+          />
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function NTimesSyncResultCard({ result }: { result: NTimesSyncResult }) {
+function NTimesSyncResultCard({
+  result,
+  failures = []
+}: {
+  result: NTimesSyncResult;
+  failures?: TransactionFailureResponse[];
+}) {
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle>N Times Result</CardTitle>
-        <Badge variant={result.failed === 0 ? "success" : "destructive"}>
-          {result.succeeded}/{result.count} published
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant={result.failed === 0 ? "success" : "destructive"}>
+            {result.succeeded}/{result.count} published
+          </Badge>
+          {failures.length > 0 && (
+            <Badge variant="destructive">
+              {failures.length} of {result.count} failed @ ledger
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -154,8 +192,8 @@ function NTimesSyncResultCard({ result }: { result: NTimesSyncResult }) {
 }
 
 type RunOutcome =
-  | { type: "flow"; result: FlowResult }
-  | { type: "ntimesSync"; result: NTimesSyncResult }
+  | { type: "flow"; result: FlowResult; accountIds: string[]; since: string }
+  | { type: "ntimesSync"; result: NTimesSyncResult; accountIds: string[]; since: string }
   | { type: "ntimesAsync"; run: BatchRunResponse };
 
 export function SingleFlowRunPage() {
@@ -168,6 +206,21 @@ export function SingleFlowRunPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [result, setResult] = useState<FlowResult | null>(null);
   const [nTimesResult, setNTimesResult] = useState<NTimesSyncResult | null>(null);
+  // Run-page watches (Phases 017/018): after a publish, watch for ledger failures (by request id)
+  // and balance updates (by involved account + time watermark). The hooks fire their own toasts; the
+  // failure hook also returns matches so the result cards can flip to a "Failed @ ledger" state.
+  const [watchRequestIds, setWatchRequestIds] = useState<string[]>([]);
+  const [watchAccountIds, setWatchAccountIds] = useState<string[]>([]);
+  const [watchSince, setWatchSince] = useState<string | null>(null);
+
+  const { failures } = useTransactionFailureWatch(watchRequestIds);
+  useBalanceUpdateWatch(watchAccountIds, watchSince);
+
+  function clearWatches() {
+    setWatchRequestIds([]);
+    setWatchAccountIds([]);
+    setWatchSince(null);
+  }
 
   const catalogQuery = useQuery({
     queryKey: ["flow-catalog"],
@@ -198,30 +251,55 @@ export function SingleFlowRunPage() {
     fees: assembled.fees
   });
 
+  // Best-effort resolution of the accounts a flow touches — the resolved slot VAs + VA_REF fields,
+  // i.e. the values that went into the published payload (the Phase 018 balance-watch scope).
+  const involvedAccountIds = (): string[] => {
+    const fromSlots = Object.values(assembled.slotOverrides ?? {});
+    const fromFields = (selectedCatalog?.fields ?? [])
+      .filter(f => f.kind === "VA_REF")
+      .map(f => assembled.flowFields?.[f.name])
+      .filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+    return Array.from(new Set([...fromSlots, ...fromFields].filter(Boolean)));
+  };
+
   const mutation = useMutation<RunOutcome>({
     mutationFn: async () => {
       const req = buildRequest();
+      // Capture the watch scope at publish time (current form state), avoiding stale closures.
+      const accountIds = involvedAccountIds();
+      const since = new Date(Date.now() - BALANCE_SKEW_MS).toISOString();
       if (chaos.strategy === "nTimes") {
         const res = await publishNTimes(token!, flowType, req);
         return res.kind === "async"
           ? { type: "ntimesAsync", run: res.run }
-          : { type: "ntimesSync", result: res.result };
+          : { type: "ntimesSync", result: res.result, accountIds, since };
       }
-      return { type: "flow", result: await runFlow(token!, flowType, req) };
+      return { type: "flow", result: await runFlow(token!, flowType, req), accountIds, since };
     },
     onSuccess: outcome => {
       setFormError(null);
       if (outcome.type === "ntimesAsync") {
+        clearWatches();
         navigate(`/chaos/batches/${outcome.run.id}`);
         return;
       }
       if (outcome.type === "ntimesSync") {
         setNTimesResult(outcome.result);
         setResult(null);
+        setWatchRequestIds(
+          outcome.result.transactionRequestIds.filter((id): id is string => Boolean(id))
+        );
+        setWatchAccountIds(outcome.accountIds);
+        setWatchSince(outcome.since);
         return;
       }
       setResult(outcome.result);
       setNTimesResult(null);
+      setWatchRequestIds(
+        outcome.result.transactionRequestId ? [outcome.result.transactionRequestId] : []
+      );
+      setWatchAccountIds(outcome.accountIds);
+      setWatchSince(outcome.since);
     },
     onError: err => setFormError(getErrorMessage(err))
   });
@@ -230,6 +308,7 @@ export function SingleFlowRunPage() {
     setFormError(null);
     setResult(null);
     setNTimesResult(null);
+    clearWatches();
     if (assembled.missingRequired.length > 0) {
       setFormError(`Required fields missing: ${assembled.missingRequired.join(", ")}`);
       return;
@@ -269,6 +348,7 @@ export function SingleFlowRunPage() {
                         setResult(null);
                         setNTimesResult(null);
                         setFormError(null);
+                        clearWatches();
                       }}
                       className={cn(
                         "rounded-md border px-3 py-1.5 text-xs transition-colors",
@@ -277,7 +357,7 @@ export function SingleFlowRunPage() {
                           : "border-border text-muted-foreground hover:bg-muted/50"
                       )}
                     >
-                      {FLOW_LABELS[f.flowType] ?? f.lifecycle?.label ?? f.flowType}
+                      {FLOW_LABELS[f.flowType] ?? f.lifecycle?.label ?? f.batchGroup?.label ?? f.flowType}
                     </button>
                   );
                 })
@@ -286,7 +366,15 @@ export function SingleFlowRunPage() {
           </CardHeader>
         </Card>
 
-        {selectedCatalog?.lifecycle ? (
+        {selectedCatalog?.batchGroup ? (
+          /* Batch disbursement: reservation form + Manual per-item wizard / Automatic run */
+          <BatchDisbursementWizard
+            key={selectedCatalog.flowType}
+            catalog={selectedCatalog}
+            catalogEntries={catalogQuery.data ?? []}
+            token={token!}
+          />
+        ) : selectedCatalog?.lifecycle ? (
           /* Lifecycle (Settlement / Disbursement): outcome selector + wizard / RANDOM panel */
           <LifecycleWizard
             key={selectedCatalog.flowType}
@@ -337,6 +425,7 @@ export function SingleFlowRunPage() {
                         setNTimesResult(null);
                         setFormError(null);
                         setChaos(INITIAL_CHAOS);
+                        clearWatches();
                       }}
                     >
                       Reset
@@ -356,8 +445,15 @@ export function SingleFlowRunPage() {
               </Card>
             </div>
 
-            {result && <FlowResultCard result={result} />}
-            {nTimesResult && <NTimesSyncResultCard result={nTimesResult} />}
+            {result && (
+              <FlowResultCard
+                result={result}
+                failure={
+                  failures.find(f => f.transactionRequestId === result.transactionRequestId) ?? null
+                }
+              />
+            )}
+            {nTimesResult && <NTimesSyncResultCard result={nTimesResult} failures={failures} />}
           </>
         )}
 

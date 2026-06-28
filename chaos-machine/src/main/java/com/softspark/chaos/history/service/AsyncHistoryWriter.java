@@ -3,6 +3,7 @@ package com.softspark.chaos.history.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.softspark.chaos.base.Ids;
+import com.softspark.chaos.flow.FlowBuilderRegistry;
 import com.softspark.chaos.flow.FlowRequest;
 import com.softspark.chaos.history.model.PublishRecord;
 import com.softspark.chaos.history.repository.PublishRecordRepository;
@@ -33,14 +34,17 @@ public class AsyncHistoryWriter implements HistoryWriter {
   private final LinkedBlockingQueue<HistoryEvent> queue;
   private final PublishRecordRepository repository;
   private final ObjectMapper objectMapper;
+  private final FlowBuilderRegistry builderRegistry;
 
   public AsyncHistoryWriter(
       @Value("${chaos.history.queue-capacity:10000}") int queueCapacity,
       PublishRecordRepository repository,
-      ObjectMapper objectMapper) {
+      ObjectMapper objectMapper,
+      FlowBuilderRegistry builderRegistry) {
     this.queue = new LinkedBlockingQueue<>(queueCapacity);
     this.repository = repository;
     this.objectMapper = objectMapper;
+    this.builderRegistry = builderRegistry;
   }
 
   /**
@@ -156,6 +160,10 @@ public class AsyncHistoryWriter implements HistoryWriter {
         event.envelope().metadata() != null ? event.envelope().metadata().idempotencyKey() : null);
     record.setTenantId(
         event.envelope().metadata() != null ? event.envelope().metadata().tenantId() : null);
+    // The canonical request id (labelled per flow) — the join key a later ledger.transaction.failed
+    // is correlated by. Null for non-transactional flows and historical rows (ADR-025).
+    record.setTransactionRequestId(
+        builderRegistry.transactionRequestIdValue(event.request()).orElse(null));
 
     var slots = event.request().slotOverrides();
     record.setSourceVaId(

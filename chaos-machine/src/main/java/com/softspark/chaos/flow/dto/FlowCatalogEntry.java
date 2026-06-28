@@ -23,6 +23,8 @@ import java.util.List;
  * @param partitionKeyField the {@code flowFields} key used as the Kafka partition key
  * @param lifecycle the lifecycle grouping for a multi-step transaction type (set on the
  *     {@code initiated} entry); {@code null} for single-shot flows
+ * @param batchGroup the batch-disbursement fan-out grouping (set on the reservation entry);
+ *     {@code null} otherwise. Mutually exclusive with {@code lifecycle} — at most one is non-null.
  */
 @RecordBuilder
 public record FlowCatalogEntry(
@@ -35,4 +37,5 @@ public record FlowCatalogEntry(
     List<String> optionalFields,
     List<String> csvColumns,
     String partitionKeyField,
-    FlowLifecycle lifecycle) {}
+    FlowLifecycle lifecycle,
+    BatchDisbursementGroup batchGroup) {}

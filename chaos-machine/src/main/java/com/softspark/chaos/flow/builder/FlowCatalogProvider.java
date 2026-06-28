@@ -2,6 +2,7 @@ package com.softspark.chaos.flow.builder;
 
 import com.softspark.chaos.flow.dto.AccountKind;
 import com.softspark.chaos.flow.dto.AutogenRule;
+import com.softspark.chaos.flow.dto.BatchDisbursementGroup;
 import com.softspark.chaos.flow.dto.CarryOver;
 import com.softspark.chaos.flow.dto.FieldKind;
 import com.softspark.chaos.flow.dto.FlowCatalogEntry;
@@ -56,6 +57,17 @@ public class FlowCatalogProvider {
           "SUBTYPE_UNSUPPORTED");
   private static final List<String> SETTLEMENT_FAILURE_CODES =
       List.of("BANK_REJECTED", "ACCOUNT_INVALID", "TIMEOUT", "INSUFFICIENT_FUNDS", "UNSPECIFIED");
+  private static final List<String> BATCH_FAILURE_CODES =
+      List.of(
+          "PROVIDER_REJECTED",
+          "PROVIDER_TIMEOUT",
+          "RECIPIENT_INVALID",
+          "VALIDATION_FAILED",
+          "PROVIDER_UNAVAILABLE",
+          "RESERVATION_MISSING",
+          "SUBTYPE_UNSUPPORTED");
+  private static final String DEFAULT_BATCH_FEES = "10";
+  private static final String DEFAULT_ITEM_COUNT = "4";
 
   private final TopicCatalog topicCatalog;
 
@@ -215,6 +227,30 @@ public class FlowCatalogProvider {
                 "credit_account_id"),
             "virtual_account_id",
             disbursementLifecycle()),
+        // ---- Batch disbursement: reservation is the single runnerVisible "Batch Disbursement" ---
+        batchEntry(
+            FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST,
+            "payment-service",
+            batchReservationFields(),
+            List.of(
+                "batch_id",
+                "batch_correlation_id",
+                "merchant_id",
+                "merchant_batch_ref",
+                "total_principal_amount",
+                "total_fees",
+                "item_count"),
+            List.of("currency", "disbursement_subtype", "callback_url"),
+            List.of(
+                "batch_id",
+                "merchant_id",
+                "total_principal_amount",
+                "total_fees",
+                "item_count",
+                "currency"),
+            "source",
+            true,
+            batchDisbursementGroup()),
         // ---- Hidden lifecycle secondary phases (rich descriptors, runnerVisible=false) --------
         richHiddenEntry(
             FlowType.SETTLEMENT_COMPLETED,
@@ -306,6 +342,100 @@ public class FlowCatalogProvider {
                 "reservation_id",
                 "failure_reason"),
             "virtual_account_id"),
+        // ---- Hidden batch phases (rich descriptors, runnerVisible=false; batchGroup=null) ------
+        batchEntry(
+            FlowType.DISBURSEMENT_BATCH_ITEM_REQUEST,
+            "payment-service",
+            batchItemRequestFields(),
+            List.of(
+                "batch_id",
+                "batch_correlation_id",
+                "item_id",
+                "merchant_item_ref",
+                "merchant_id",
+                "virtual_account_id",
+                "principal_amount",
+                "item_fee",
+                "credit_provider_id",
+                "credit_account_id"),
+            List.of(
+                "currency",
+                "disbursement_subtype",
+                "source_country",
+                "destination_country",
+                "corridor",
+                "fx_quote_reference"),
+            List.of(
+                "batch_id",
+                "item_id",
+                "virtual_account_id",
+                "principal_amount",
+                "item_fee",
+                "currency"),
+            "virtual_account_id",
+            false,
+            null),
+        batchEntry(
+            FlowType.DISBURSEMENT_BATCH_ITEM_COMPLETED,
+            "payment-service",
+            batchItemCompletedFields(),
+            List.of(
+                "batch_id",
+                "item_id",
+                "virtual_account_id",
+                "reservation_id",
+                "principal_amount",
+                "provider_id",
+                "provider_reference_id",
+                "merchant_item_ref"),
+            List.of(
+                "currency",
+                "disbursement_subtype",
+                "recipient_reference",
+                "destination_country",
+                "corridor",
+                "applied_fx_rate",
+                "completed_at"),
+            List.of(
+                "batch_id",
+                "item_id",
+                "virtual_account_id",
+                "reservation_id",
+                "principal_amount",
+                "currency",
+                "provider_id",
+                "merchant_item_ref"),
+            "virtual_account_id",
+            false,
+            null),
+        batchEntry(
+            FlowType.DISBURSEMENT_BATCH_ITEM_FAILED,
+            "payment-service",
+            batchItemFailedFields(),
+            List.of(
+                "batch_id",
+                "item_id",
+                "virtual_account_id",
+                "reservation_id",
+                "principal_amount",
+                "provider_id",
+                "merchant_item_ref",
+                "failure_reason",
+                "failure_code"),
+            List.of("currency", "disbursement_subtype", "failed_at", "provider_reference_id"),
+            List.of(
+                "batch_id",
+                "item_id",
+                "virtual_account_id",
+                "reservation_id",
+                "principal_amount",
+                "currency",
+                "provider_id",
+                "merchant_item_ref",
+                "failure_reason"),
+            "virtual_account_id",
+            false,
+            null),
         // ---- Hidden flows (minimal text descriptors, runnerVisible=false) ---------------------
         hiddenEntry(
             FlowType.ORGANIZATION_ONBOARDED,
@@ -371,6 +501,40 @@ public class FlowCatalogProvider {
             new CarryOver("disbursement_subtype", "disbursement_subtype"),
             new CarryOver("currency", "currency"),
             new CarryOver("merchant_ref_id", "merchant_ref_id")));
+  }
+
+  // ---- Batch disbursement grouping --------------------------------------------------------------
+
+  private static BatchDisbursementGroup batchDisbursementGroup() {
+    return new BatchDisbursementGroup(
+        "Batch Disbursement",
+        FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST,
+        FlowType.DISBURSEMENT_BATCH_ITEM_REQUEST,
+        FlowType.DISBURSEMENT_BATCH_ITEM_COMPLETED,
+        FlowType.DISBURSEMENT_BATCH_ITEM_FAILED,
+        // reservation → item (the source VA becomes the item's virtual_account_id)
+        List.of(
+            new CarryOver("batch_id", "batch_id"),
+            new CarryOver("batch_correlation_id", "batch_correlation_id"),
+            new CarryOver("merchant_id", "merchant_id"),
+            new CarryOver("reservation_id", "reservation_id"),
+            new CarryOver("source_va_id", "virtual_account_id"),
+            new CarryOver("currency", "currency"),
+            new CarryOver("disbursement_subtype", "disbursement_subtype"),
+            new CarryOver("correlation_id", "correlation_id")),
+        // item request → item terminal (item_fee feeds the terminal fee line)
+        List.of(
+            new CarryOver("batch_id", "batch_id"),
+            new CarryOver("item_id", "item_id"),
+            new CarryOver("item_sequence", "item_sequence"),
+            new CarryOver("principal_amount", "principal_amount"),
+            new CarryOver("item_fee", "item_fee"),
+            new CarryOver("virtual_account_id", "virtual_account_id"),
+            new CarryOver("disbursement_subtype", "disbursement_subtype"),
+            new CarryOver("merchant_item_ref", "merchant_item_ref"),
+            new CarryOver("provider_id", "provider_id"),
+            new CarryOver("corridor", "corridor"),
+            new CarryOver("destination_country", "destination_country")));
   }
 
   // ---- Per-flow descriptor lists ----------------------------------------------------------------
@@ -535,6 +699,102 @@ public class FlowCatalogProvider {
     return List.copyOf(fields);
   }
 
+  /** Batch reservation: step 1 (mints batch_id; org VA reservation for total_amount). */
+  private List<FlowFieldDescriptor> batchReservationFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
+    fields.add(
+        vaRef(
+            "destination_va_id", "Destination VA (Platform Float)", AccountKind.SYSTEM,
+            "destination"));
+    fields.add(amountField("total_principal_amount", "Total Principal Amount", DEFAULT_AMOUNT));
+    fields.add(amountField("total_fees", "Total Fees", DEFAULT_BATCH_FEES));
+    fields.add(integer("item_count", "Item Count (N)", DEFAULT_ITEM_COUNT));
+    fields.add(reqSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(advUuid("batch_id", "Batch ID"));
+    fields.add(advUuid("batch_correlation_id", "Batch Correlation ID"));
+    fields.add(advUlid("merchant_batch_ref", "Merchant Batch Reference"));
+    fields.add(advInferred("merchant_id", "Merchant ID", InferenceRule.ORG_FROM_SOURCE_VA));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advAutogen("correlation_id", "Correlation ID"));
+    fields.add(advText("callback_url", "Callback URL", null));
+    fields.add(advText("authorised_user_id", "Authorised User ID", "chaos-operator"));
+    fields.add(advText("authorised_key_fingerprint", "Authorised Key Fingerprint", "ab:cd:ef:00"));
+    fields.add(tenantAdvanced());
+    return List.copyOf(fields);
+  }
+
+  /** Batch item request: per item, inert at the ledger (carry-over + split prefill). */
+  private List<FlowFieldDescriptor> batchItemRequestFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
+    fields.add(amountField("item_fee", "Item Fee", DEFAULT_BATCH_FEES));
+    fields.add(
+        vaRefFlowAdv("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(advText("credit_provider_id", "Credit Provider ID", DEFAULT_PROVIDER));
+    fields.add(advText("credit_account_id", "Credit Account ID", DEFAULT_CREDIT_ACCOUNT));
+    fields.add(advUuid("item_id", "Item ID"));
+    fields.add(integerAdv("item_sequence", "Item Sequence"));
+    fields.add(advUlid("merchant_item_ref", "Merchant Item Reference"));
+    fields.add(advUuid("batch_id", "Batch ID"));
+    fields.add(advUuid("batch_correlation_id", "Batch Correlation ID"));
+    fields.add(advText("merchant_id", "Merchant ID", null));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(country("source_country", "Source Country", DEFAULT_COUNTRY));
+    fields.add(country("destination_country", "Destination Country", DEFAULT_COUNTRY));
+    fields.add(derivedCorridor());
+    fields.add(advText("fx_quote_reference", "FX Quote Reference", null));
+    fields.add(advAutogen("correlation_id", "Correlation ID"));
+    return List.copyOf(fields);
+  }
+
+  /** Batch item completed: per item success (partial capture; carry-over + reservation + fees). */
+  private List<FlowFieldDescriptor> batchItemCompletedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(
+        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(reservationField("reservation_id", "Reservation ID"));
+    fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
+    fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
+    fields.add(advText("provider_id", "Provider ID", DEFAULT_PROVIDER));
+    fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
+    fields.add(advUlid("merchant_item_ref", "Merchant Item Reference"));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(advText("recipient_reference", "Recipient Reference", null));
+    fields.add(advText("destination_country", "Destination Country", null));
+    fields.add(advText("corridor", "Corridor", null));
+    fields.add(amountAdv("applied_fx_rate", "Applied FX Rate"));
+    fields.add(advDateTime("completed_at", "Completed At"));
+    fields.add(integerAdv("item_sequence", "Item Sequence"));
+    fields.add(advUuid("batch_id", "Batch ID"));
+    fields.add(advUuid("item_id", "Item ID"));
+    return List.copyOf(fields);
+  }
+
+  /** Batch item failed: per item failure (partial release; carry-over + reservation + failure). */
+  private List<FlowFieldDescriptor> batchItemFailedFields() {
+    var fields = new ArrayList<FlowFieldDescriptor>();
+    fields.add(
+        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+    fields.add(reservationField("reservation_id", "Reservation ID"));
+    fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
+    fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
+    fields.add(reqText("failure_reason", "Failure Reason", "Batch item disbursement failed"));
+    fields.add(advSelect("failure_code", "Failure Code", "RECIPIENT_INVALID", BATCH_FAILURE_CODES));
+    fields.add(advText("provider_id", "Provider ID", DEFAULT_PROVIDER));
+    fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
+    fields.add(advUlid("merchant_item_ref", "Merchant Item Reference"));
+    fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
+    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(advDateTime("failed_at", "Failed At"));
+    fields.add(integerAdv("item_sequence", "Item Sequence"));
+    fields.add(advUuid("batch_id", "Batch ID"));
+    fields.add(advUuid("item_id", "Item ID"));
+    return List.copyOf(fields);
+  }
+
   /** Settlement initiated: lifecycle step 1 (org VA → bank). */
   private List<FlowFieldDescriptor> settlementInitiatedFields() {
     var fields = new ArrayList<FlowFieldDescriptor>();
@@ -664,6 +924,21 @@ public class FlowCatalogProvider {
     return base(name, label, FieldKind.AMOUNT, false, true).build();
   }
 
+  /** A required (shown) whole-number field with a default (e.g. the batch {@code item_count}). */
+  private static FlowFieldDescriptor integer(String name, String label, String defaultValue) {
+    return base(name, label, FieldKind.INTEGER, true, false).defaultValue(defaultValue).build();
+  }
+
+  /** An advanced (collapsed) whole-number field (e.g. the carried {@code item_sequence}). */
+  private static FlowFieldDescriptor integerAdv(String name, String label) {
+    return base(name, label, FieldKind.INTEGER, false, true).build();
+  }
+
+  /** An advanced (collapsed) UUID field auto-filled with a fresh UUID (carried batch/item ids). */
+  private static FlowFieldDescriptor advUuid(String name, String label) {
+    return base(name, label, FieldKind.UUID, false, true).autogen(AutogenRule.UUID_V4).build();
+  }
+
   private static FlowFieldDescriptor advInferred(String name, String label, InferenceRule rule) {
     return base(name, label, FieldKind.TEXT, false, true).inference(rule).build();
   }
@@ -754,7 +1029,36 @@ public class FlowCatalogProvider {
         optionalFields,
         csvColumns,
         partitionKeyField,
-        lifecycle);
+        lifecycle,
+        null);
+  }
+
+  /**
+   * A {@code runnerVisible} entry carrying a {@link BatchDisbursementGroup} (the reservation entry)
+   * or a hidden batch phase entry ({@code runnerVisible = false}, {@code batchGroup = null}).
+   */
+  private FlowCatalogEntry batchEntry(
+      FlowType flowType,
+      String source,
+      List<FlowFieldDescriptor> fields,
+      List<String> requiredFields,
+      List<String> optionalFields,
+      List<String> csvColumns,
+      String partitionKeyField,
+      boolean runnerVisible,
+      @Nullable BatchDisbursementGroup batchGroup) {
+    return new FlowCatalogEntry(
+        flowType,
+        topicCatalog.topicFor(flowType),
+        source,
+        runnerVisible,
+        fields,
+        requiredFields,
+        optionalFields,
+        csvColumns,
+        partitionKeyField,
+        null,
+        batchGroup);
   }
 
   private FlowCatalogEntry richHiddenEntry(
@@ -775,6 +1079,7 @@ public class FlowCatalogProvider {
         optionalFields,
         csvColumns,
         partitionKeyField,
+        null,
         null);
   }
 
@@ -795,6 +1100,7 @@ public class FlowCatalogProvider {
         optionalFields,
         csvColumns,
         partitionKeyField,
+        null,
         null);
   }
 }

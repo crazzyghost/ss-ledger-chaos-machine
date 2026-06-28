@@ -3,6 +3,7 @@ package com.softspark.chaos.flow.builder;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.softspark.chaos.flow.dto.AutogenRule;
+import com.softspark.chaos.flow.dto.BatchDisbursementGroup;
 import com.softspark.chaos.flow.dto.CarryOver;
 import com.softspark.chaos.flow.dto.FieldKind;
 import com.softspark.chaos.flow.dto.FlowCatalogEntry;
@@ -34,7 +35,7 @@ class FlowCatalogProviderTest {
   }
 
   @Test
-  void should_exposeExactlyEightRunnerVisibleFlows_when_catalogBuilt() {
+  void should_exposeExactlyNineRunnerVisibleFlows_when_catalogBuilt() {
     Set<FlowType> visible =
         provider.catalog().stream()
             .filter(FlowCatalogEntry::runnerVisible)
@@ -50,7 +51,8 @@ class FlowCatalogProviderTest {
             FlowType.TREASURY_TRANSFER_COMPLETED,
             FlowType.COLLECTION_COMPLETED,
             FlowType.SETTLEMENT_INITIATED,
-            FlowType.DISBURSEMENT_INITIATED);
+            FlowType.DISBURSEMENT_INITIATED,
+            FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST);
   }
 
   @Test
@@ -117,11 +119,77 @@ class FlowCatalogProviderTest {
   }
 
   @Test
+  void should_attachBatchGroupToReservationOnly_when_catalogBuilt() {
+    // Reservation is the single runnerVisible batch entry and the only one carrying the group.
+    FlowCatalogEntry reservation = entry(FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST);
+    assertThat(reservation.runnerVisible()).isTrue();
+    assertThat(reservation.lifecycle()).isNull();
+    BatchDisbursementGroup group = reservation.batchGroup();
+    assertThat(group).isNotNull();
+    assertThat(group.label()).isEqualTo("Batch Disbursement");
+    assertThat(group.reservation()).isEqualTo(FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST);
+    assertThat(group.itemRequest()).isEqualTo(FlowType.DISBURSEMENT_BATCH_ITEM_REQUEST);
+    assertThat(group.itemCompleted()).isEqualTo(FlowType.DISBURSEMENT_BATCH_ITEM_COMPLETED);
+    assertThat(group.itemFailed()).isEqualTo(FlowType.DISBURSEMENT_BATCH_ITEM_FAILED);
+    assertThat(group.reservationToItem())
+        .contains(
+            new CarryOver("batch_id", "batch_id"),
+            new CarryOver("source_va_id", "virtual_account_id"),
+            new CarryOver("reservation_id", "reservation_id"),
+            new CarryOver("disbursement_subtype", "disbursement_subtype"));
+    assertThat(group.itemRequestToTerminal())
+        .contains(
+            new CarryOver("item_id", "item_id"),
+            new CarryOver("item_sequence", "item_sequence"),
+            new CarryOver("principal_amount", "principal_amount"),
+            new CarryOver("merchant_item_ref", "merchant_item_ref"));
+
+    // The three other batch phases keep full descriptors but are hidden and groupless.
+    for (FlowType t :
+        List.of(
+            FlowType.DISBURSEMENT_BATCH_ITEM_REQUEST,
+            FlowType.DISBURSEMENT_BATCH_ITEM_COMPLETED,
+            FlowType.DISBURSEMENT_BATCH_ITEM_FAILED)) {
+      assertThat(entry(t).runnerVisible()).isFalse();
+      assertThat(entry(t).batchGroup()).isNull();
+      assertThat(entry(t).fields()).isNotEmpty();
+    }
+  }
+
+  @Test
+  void should_atMostOneGroupingPerEntry_when_catalogBuilt() {
+    for (FlowCatalogEntry e : provider.catalog()) {
+      boolean both = e.lifecycle() != null && e.batchGroup() != null;
+      assertThat(both).as("entry %s has both lifecycle and batchGroup", e.flowType()).isFalse();
+    }
+  }
+
+  @Test
+  void should_useIntegerKindForItemCount_when_batchReservationDescriptors() {
+    FlowFieldDescriptor itemCount =
+        field(FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST, "item_count");
+    assertThat(itemCount.kind()).isEqualTo(FieldKind.INTEGER);
+    assertThat(itemCount.required()).isTrue();
+    assertThat(itemCount.defaultValue()).isEqualTo("4");
+
+    FlowFieldDescriptor totalPrincipal =
+        field(FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST, "total_principal_amount");
+    assertThat(totalPrincipal.kind()).isEqualTo(FieldKind.AMOUNT);
+    assertThat(totalPrincipal.defaultValue()).isEqualTo("1000.0000");
+
+    FlowFieldDescriptor failureCode =
+        field(FlowType.DISBURSEMENT_BATCH_ITEM_FAILED, "failure_code");
+    assertThat(failureCode.kind()).isEqualTo(FieldKind.SELECT);
+    assertThat(failureCode.options()).hasSize(7).contains("RESERVATION_MISSING");
+  }
+
+  @Test
   void should_haveBootstrapSlotForEveryRunnerVaRefSlot_when_catalogBuilt() throws Exception {
     Set<String> seeded = seededSlots();
     for (FlowCatalogEntry e : provider.catalog()) {
       // Only flows reachable by the runner/wizard need seeded slots.
-      boolean reachable = e.runnerVisible() || isLifecycleSecondary(e.flowType());
+      boolean reachable =
+          e.runnerVisible() || isLifecycleSecondary(e.flowType()) || isBatchPhase(e.flowType());
       if (!reachable) {
         continue;
       }
@@ -140,6 +208,13 @@ class FlowCatalogProviderTest {
         || type == FlowType.SETTLEMENT_FAILED
         || type == FlowType.DISBURSEMENT_COMPLETED
         || type == FlowType.DISBURSEMENT_FAILED;
+  }
+
+  private boolean isBatchPhase(FlowType type) {
+    return type == FlowType.DISBURSEMENT_BATCH_RESERVATION_REQUEST
+        || type == FlowType.DISBURSEMENT_BATCH_ITEM_REQUEST
+        || type == FlowType.DISBURSEMENT_BATCH_ITEM_COMPLETED
+        || type == FlowType.DISBURSEMENT_BATCH_ITEM_FAILED;
   }
 
   private FlowFieldDescriptor field(FlowType type, String name) {

@@ -2,6 +2,7 @@ package com.softspark.chaos.flow.controller;
 
 import com.softspark.chaos.batch.dto.BatchRunResponse;
 import com.softspark.chaos.exception.BadRequestException;
+import com.softspark.chaos.flow.BatchDisbursementRunService;
 import com.softspark.chaos.flow.FlowEngine;
 import com.softspark.chaos.flow.FlowRequest;
 import com.softspark.chaos.flow.FlowRequestBuilder;
@@ -14,6 +15,7 @@ import com.softspark.chaos.flow.builder.FlowCatalogProvider;
 import com.softspark.chaos.flow.chaos.ExecutionMode;
 import com.softspark.chaos.flow.chaos.NTimesOptions;
 import com.softspark.chaos.flow.chaos.Pacing;
+import com.softspark.chaos.flow.dto.BatchDisbursementRunRequest;
 import com.softspark.chaos.flow.dto.FlowCatalogEntry;
 import com.softspark.chaos.flow.dto.FlowLifecycle;
 import com.softspark.chaos.flow.dto.PublishFlowRequest;
@@ -49,18 +51,21 @@ public class FlowController {
   private final NTimesSyncRunner nTimesSyncRunner;
   private final NTimesRunService nTimesRunService;
   private final LifecycleRunService lifecycleRunService;
+  private final BatchDisbursementRunService batchDisbursementRunService;
 
   public FlowController(
       FlowEngine flowEngine,
       FlowCatalogProvider catalogProvider,
       NTimesSyncRunner nTimesSyncRunner,
       NTimesRunService nTimesRunService,
-      LifecycleRunService lifecycleRunService) {
+      LifecycleRunService lifecycleRunService,
+      BatchDisbursementRunService batchDisbursementRunService) {
     this.flowEngine = flowEngine;
     this.catalogProvider = catalogProvider;
     this.nTimesSyncRunner = nTimesSyncRunner;
     this.nTimesRunService = nTimesRunService;
     this.lifecycleRunService = lifecycleRunService;
+    this.batchDisbursementRunService = batchDisbursementRunService;
   }
 
   /**
@@ -151,6 +156,28 @@ public class FlowController {
     FlowRequest base = toFlowRequest(flowType, request);
     NTimesOptions options = lifecycleOptions(request);
     BatchRunResponse run = lifecycleRunService.startRun(base, lifecycle, options);
+    return ResponseEntity.accepted().body(run);
+  }
+
+  /**
+   * Runs a whole batch disbursement unattended (Phase 016): publishes one reservation, resolves the
+   * {@code reservation_id}, splits the totals across N items, decides each item's outcome by the
+   * {@link com.softspark.chaos.flow.dto.BatchOutcomePolicy}, and publishes per item
+   * {@code item.request} then {@code item.completed|item.failed}. Always asynchronous: returns a
+   * {@code 202} run handle (carrying {@code externalBatchId}) to poll in the run-results view.
+   *
+   * @param request the batch run request (reservation intent + N + split + outcome policy + pacing)
+   * @return {@code 202} with a {@link BatchRunResponse} run handle
+   */
+  @PostMapping("/disbursement-batch/run")
+  @Operation(
+      summary = "Run an automatic batch disbursement (unattended)",
+      description =
+          "Publishes one reservation then N items (split + outcome policy) on the backend. "
+              + "Returns a 202 run handle to poll, carrying the ledger batch_id for the summary.")
+  public ResponseEntity<BatchRunResponse> runDisbursementBatch(
+      @RequestBody BatchDisbursementRunRequest request) {
+    BatchRunResponse run = batchDisbursementRunService.startRun(request);
     return ResponseEntity.accepted().body(run);
   }
 

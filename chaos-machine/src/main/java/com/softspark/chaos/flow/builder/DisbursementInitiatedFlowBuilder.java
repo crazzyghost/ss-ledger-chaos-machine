@@ -43,6 +43,11 @@ public class DisbursementInitiatedFlowBuilder
   }
 
   @Override
+  public java.util.Optional<String> transactionRequestIdField() {
+    return java.util.Optional.of("transaction_id");
+  }
+
+  @Override
   public String source() {
     return "payment-service";
   }

@@ -4,6 +4,9 @@ import com.softspark.chaos.exception.InternalServerErrorException;
 import com.softspark.chaos.exception.NotFoundException;
 import com.softspark.chaos.ledgerproxy.circuitbreaker.CircuitBreaker;
 import com.softspark.chaos.ledgerproxy.circuitbreaker.CircuitBreakerOpenException;
+import com.softspark.chaos.ledgerproxy.dto.BatchBalanceItemDto;
+import com.softspark.chaos.ledgerproxy.dto.BatchBalanceListDto;
+import com.softspark.chaos.ledgerproxy.dto.DisbursementBatchSummaryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
@@ -16,6 +19,7 @@ import com.softspark.chaos.ledgerproxy.dto.ReservationResponse;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import jakarta.annotation.Nullable;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -150,21 +154,35 @@ public class LedgerClient {
   }
 
   /**
-   * Retrieves the balance for a single account from the ledger.
+   * Retrieves the balance for a single account from the ledger, optionally as of a point in time.
+   *
+   * <p>When {@code asOf} is non-null it is appended as the ledger's {@code asOf} query param (ISO
+   * local date-time); the ledger reconstructs the historical snapshot and is authoritative for the
+   * not-future rule (ADR-020). A {@code 400} for a bad/future {@code asOf} is translated to a {@link
+   * NotFoundException} like every other 4xx on this proxy.
    *
    * @param callerToken the caller's bearer token
    * @param accountId the ledger account UUID
+   * @param asOf optional point-in-time; {@code null} reads the current balance
    * @return the balance DTO
-   * @throws NotFoundException if the ledger returns 404
+   * @throws NotFoundException if the ledger returns 4xx (e.g. unknown account, future {@code asOf})
    * @throws CircuitBreakerOpenException if the circuit is open
    */
-  public LedgerBalanceDto getAccountBalance(String callerToken, String accountId) {
+  public LedgerBalanceDto getAccountBalance(
+      String callerToken, String accountId, @Nullable LocalDateTime asOf) {
     var token = resolveToken(callerToken);
     return circuitBreaker.execute(
         () ->
             restClient
                 .get()
-                .uri("/api/v0/accounts/{id}/balance", accountId)
+                .uri(
+                    uriBuilder -> {
+                      var builder = uriBuilder.path("/api/v0/accounts/{id}/balance");
+                      if (asOf != null) {
+                        builder = builder.queryParam("asOf", asOf);
+                      }
+                      return builder.build(accountId);
+                    })
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .onStatus(
@@ -179,6 +197,55 @@ public class LedgerClient {
                           "Ledger error: " + resp.getStatusCode().value());
                     })
                 .body(LedgerBalanceDto.class));
+  }
+
+  /**
+   * Retrieves balances for several accounts in one call from the ledger's batch endpoint.
+   *
+   * <p>Proxies {@code GET /api/v0/balances?accountId=…} (repeated param), forwarding the ids
+   * verbatim and unwrapping the ledger's paged envelope to a flat list (ADR-021). Each returned item
+   * carries the ledger's per-account {@code status} ({@code FOUND}/{@code NOT_FOUND}/{@code
+   * FORBIDDEN}); a not-found/forbidden item has {@code null} balance fields and is not an error. The
+   * caller (UI) bounds the id count to a page (≤ the ledger's batch cap).
+   *
+   * @param callerToken the caller's bearer token
+   * @param accountIds the account UUIDs to look up
+   * @return one balance item per requested id (empty if the ledger returns no rows)
+   * @throws NotFoundException if the ledger returns 4xx (e.g. id count over the cap)
+   * @throws InternalServerErrorException if the ledger returns 5xx
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public List<BatchBalanceItemDto> getBatchBalances(String callerToken, List<String> accountIds) {
+    var token = resolveToken(callerToken);
+    BatchBalanceListDto body =
+        circuitBreaker.execute(
+            () ->
+                restClient
+                    .get()
+                    .uri(
+                        uriBuilder -> {
+                          var builder = uriBuilder.path("/api/v0/balances");
+                          for (var id : accountIds) {
+                            builder = builder.queryParam("accountId", id);
+                          }
+                          return builder.build();
+                        })
+                    .header("Authorization", "Bearer " + token)
+                    .retrieve()
+                    .onStatus(
+                        HttpStatusCode::is4xxClientError,
+                        (req, resp) -> {
+                          throw new NotFoundException(
+                              "Ledger returned: " + resp.getStatusCode().value());
+                        })
+                    .onStatus(
+                        HttpStatusCode::is5xxServerError,
+                        (req, resp) -> {
+                          throw new InternalServerErrorException(
+                              "Ledger error: " + resp.getStatusCode().value());
+                        })
+                    .body(BatchBalanceListDto.class));
+    return body == null || body.data() == null ? List.of() : body.data();
   }
 
   /**
@@ -469,6 +536,46 @@ public class LedgerClient {
       return content;
     }
     return content.stream().filter(r -> transactionRef.equals(r.transactionRef())).toList();
+  }
+
+  /**
+   * Fetches a disbursement batch summary from the ledger, keyed by {@code batch_id}.
+   *
+   * <p>Proxies the ledger's {@code GET /api/v0/disbursement-batches/{batchId}} endpoint (verified
+   * {@code DisbursementBatchQueryController}), which returns the batch's ledger-created
+   * {@code reservation_id} directly plus the derived status and item counters (ADR-023). This is the
+   * single place the path/params/shape live; if the ledger contract differs, adjust here. The
+   * documented fallback is the ADR-018 account-reservations path filtered by
+   * {@code disbursementBatchId} ({@link #getReservations}).
+   *
+   * @param callerToken the caller's bearer token (empty/service token for in-process callers)
+   * @param batchId the batch id (the driver-controlled {@code batch_id})
+   * @return the batch summary ({@code reservationId} may be null until the reservation lands)
+   * @throws NotFoundException if the ledger returns 4xx (e.g. unknown batch)
+   * @throws InternalServerErrorException if the ledger returns 5xx
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public DisbursementBatchSummaryDto getDisbursementBatch(String callerToken, String batchId) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri("/api/v0/disbursement-batches/{batchId}", batchId)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::is4xxClientError,
+                    (req, resp) -> {
+                      throw new NotFoundException("Disbursement batch not found: " + batchId);
+                    })
+                .onStatus(
+                    HttpStatusCode::is5xxServerError,
+                    (req, resp) -> {
+                      throw new InternalServerErrorException(
+                          "Ledger error: " + resp.getStatusCode().value());
+                    })
+                .body(DisbursementBatchSummaryDto.class));
   }
 
   private String resolveToken(String callerToken) {

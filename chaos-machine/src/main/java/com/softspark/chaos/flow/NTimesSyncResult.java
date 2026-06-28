@@ -15,6 +15,8 @@ import java.util.List;
  * @param correlationId the single correlation id shared by all iterations
  * @param eventIds the per-iteration published event ids, in order
  * @param historyIds the per-iteration publish-history record ids, in order
+ * @param transactionRequestIds the per-iteration transaction request ids (server-minted by the
+ *     N-Times expander), in order; entries may be null for non-transactional flows
  */
 @RecordBuilder
 public record NTimesSyncResult(
@@ -24,4 +26,5 @@ public record NTimesSyncResult(
     int failed,
     String correlationId,
     List<String> eventIds,
-    List<String> historyIds) {}
+    List<String> historyIds,
+    List<String> transactionRequestIds) {}

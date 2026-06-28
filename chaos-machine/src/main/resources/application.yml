@@ -64,6 +64,7 @@ chaos:
     consumer:
       enabled: ${CHAOS_KAFKA_CONSUMER_ENABLED:true}
       group-id: ${KAFKA_CONSUMER_GROUP:chaos-machine}
+      dlq-group-id: ${CHAOS_KAFKA_DLQ_CONSUMER_GROUP:chaos-machine-dlq}
       concurrency: ${CHAOS_KAFKA_CONSUMER_CONCURRENCY:1}
       auto-offset-reset: ${CHAOS_KAFKA_CONSUMER_AUTO_OFFSET_RESET:earliest}
       max-attempts: ${CHAOS_KAFKA_CONSUMER_MAX_ATTEMPTS:3}
@@ -109,6 +110,10 @@ chaos:
     disbursement-completed: disbursement.completed
     disbursement-failed: disbursement.failed
     ledger-account-created: ${CHAOS_LEDGER_ACCOUNT_CREATED_TOPIC:ledger.account.created}
+    ledger-transaction-failed: ${CHAOS_LEDGER_TRANSACTION_FAILED_TOPIC:ledger.transaction.failed}
+    ledger-balance-updated: ${CHAOS_LEDGER_BALANCE_UPDATED_TOPIC:ledger.balance.updated}
+    ledger-reservation-created: ${CHAOS_LEDGER_RESERVATION_CREATED_TOPIC:ledger.reservation.created}
+    ledger-reservation-released: ${CHAOS_LEDGER_RESERVATION_RELEASED_TOPIC:ledger.reservation.released}
   bootstrap:
     reconcile-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_DELAY_MS:60000}
     reconcile-initial-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_INITIAL_DELAY_MS:30000}

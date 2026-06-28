@@ -34,7 +34,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("NTimesSyncRunner")
 class NTimesSyncRunnerTest {
 
-  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L);
+  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L, 100);
 
   @Mock private FlowEngine flowEngine;
   private NTimesSyncRunner runner;
@@ -65,7 +65,8 @@ class NTimesSyncRunnerTest {
         .thenAnswer(
             inv -> {
               int n = counter.incrementAndGet();
-              return new FlowResult("evt-" + n, "topic", 0, n, "PUBLISHED", "hist-" + n, null);
+              return new FlowResult(
+                  "evt-" + n, "topic", 0, n, "PUBLISHED", "hist-" + n, null, "req-" + n);
             });
   }
 
@@ -88,6 +89,7 @@ class NTimesSyncRunnerTest {
     assertThat(result.correlationId()).isEqualTo("corr-1");
     assertThat(result.eventIds()).hasSize(3);
     assertThat(result.historyIds()).hasSize(3);
+    assertThat(result.transactionRequestIds()).containsExactly("req-1", "req-2", "req-3");
   }
 
   @Test
@@ -99,7 +101,8 @@ class NTimesSyncRunnerTest {
             inv -> {
               int n = counter.incrementAndGet();
               String status = n == 2 ? "FAILED" : "PUBLISHED";
-              return new FlowResult("evt-" + n, "topic", 0, n, status, "hist-" + n, null);
+              return new FlowResult(
+                  "evt-" + n, "topic", 0, n, status, "hist-" + n, null, "req-" + n);
             });
     var options = new NTimesOptions(3, Pacing.BURST, ExecutionMode.SYNC, null, null, null);
 

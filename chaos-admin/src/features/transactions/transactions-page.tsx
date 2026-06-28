@@ -22,11 +22,13 @@ import {
   getLedgerAccount,
   listSentHistory,
   listLedgerTransactions,
+  listTransactionFailuresByRequestIds,
   type HistoryFilters,
   type LedgerTransactionFilters,
   type LedgerTransactionHistoryRecord,
   type PublishRecordResponse,
-  type LedgerTransactionDto
+  type LedgerTransactionDto,
+  type TransactionFailureResponse
 } from "@/lib/api";
 import {
   formatDate,
@@ -39,8 +41,53 @@ import {
 import { usePersistedTabs } from "@/lib/use-persisted-tabs";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { FileText, Wallet } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+// The ledger Outcome of a published row (Phase 017): distinct from the publish-to-Kafka Status.
+// "No failure" frames the absence honestly (failures are asynchronous — never an affirmative success).
+function OutcomeCell({
+  record,
+  failureMap,
+  loading
+}: {
+  record: PublishRecordResponse;
+  failureMap: Map<string, TransactionFailureResponse>;
+  loading: boolean;
+}) {
+  if (!record.transactionRequestId) {
+    return (
+      <span className="text-muted-foreground" title="Non-transactional flow — no ledger outcome">
+        —
+      </span>
+    );
+  }
+  const failure = failureMap.get(record.transactionRequestId);
+  if (failure) {
+    return (
+      <Badge variant="destructive" title={failure.failureReason ?? "Rejected by the ledger"}>
+        Failed @ ledger{failure.failureCode ? ` · ${failure.failureCode}` : ""}
+      </Badge>
+    );
+  }
+  // Don't assert "no failure" until the per-page lookup has resolved — avoid transiently
+  // mislabelling a genuinely-failed row.
+  if (loading) {
+    return (
+      <span className="text-muted-foreground" title="Checking ledger outcome…">
+        …
+      </span>
+    );
+  }
+  return (
+    <Badge
+      variant="neutral"
+      title="Ledger acceptance — no failure observed (asynchronous; not a success guarantee)"
+    >
+      No failure
+    </Badge>
+  );
+}
 
 // The ledger's EntryTypeEnum — used to populate the transaction-history entry-type filter.
 const ENTRY_TYPE_OPTIONS = [
@@ -85,10 +132,12 @@ function isLedgerProxyUnavailable(error: unknown): boolean {
 
 function HistoryDetailDialog({
   record,
+  failure,
   open,
   onOpenChange
 }: {
   record: PublishRecordResponse | null;
+  failure?: TransactionFailureResponse | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
@@ -150,6 +199,13 @@ function HistoryDetailDialog({
               tone="warning"
             />
           )}
+          {failure && (
+            <InlineNotice
+              title={`Failed at ledger${failure.failureCode ? `: ${failure.failureCode}` : ""}`}
+              description={`${failure.failureReason ?? "Rejected by the ledger"} · recording ${failure.ledgerTransactionId} · ${formatDate(failure.occurredAt)}`}
+              tone="danger"
+            />
+          )}
           {parsedPayload && (
             <JsonPanel
               title="Event Payload"
@@ -186,6 +242,26 @@ function SentHistoryTab({ filters }: { filters: HistoryFilters }) {
   const total = query.data?.total ?? 0;
   const hasNextPage = (page + 1) * PER_PAGE < total;
 
+  // One batch failures lookup per page (Phase 017): collect the page's request ids and resolve their
+  // ledger outcome in a single call, building a requestId → failure map.
+  const requestIds = useMemo(
+    () =>
+      Array.from(
+        new Set(records.map(r => r.transactionRequestId).filter((id): id is string => Boolean(id)))
+      ),
+    [records]
+  );
+  const failuresQuery = useQuery({
+    queryKey: ["transaction-failures", "by-request-ids", requestIds],
+    queryFn: () => listTransactionFailuresByRequestIds(token!, requestIds),
+    enabled: requestIds.length > 0
+  });
+  const failureMap = useMemo(() => {
+    const map = new Map<string, TransactionFailureResponse>();
+    for (const f of failuresQuery.data?.items ?? []) map.set(f.transactionRequestId, f);
+    return map;
+  }, [failuresQuery.data]);
+
   function openDetail(record: PublishRecordResponse) {
     setSelectedRecord(record);
     setDetailOpen(true);
@@ -201,14 +277,15 @@ function SentHistoryTab({ filters }: { filters: HistoryFilters }) {
                 <TH>Event Type</TH>
                 <TH>Source VA</TH>
                 <TH>Destination VA</TH>
-                <TH>Status</TH>
+                <TH title="Publish to Kafka">Status</TH>
+                <TH title="Ledger acceptance (async)">Outcome</TH>
                 <TH>Chaos</TH>
                 <TH>Correlation ID</TH>
                 <TH>Created</TH>
               </TR>
             </THead>
             <TBody>
-              <TableLoadingRows columns={7} rows={6} />
+              <TableLoadingRows columns={8} rows={6} />
             </TBody>
           </Table>
         </TableContainer>
@@ -234,7 +311,8 @@ function SentHistoryTab({ filters }: { filters: HistoryFilters }) {
                 <TH>Event Type</TH>
                 <TH>Source VA</TH>
                 <TH>Destination VA</TH>
-                <TH>Status</TH>
+                <TH title="Publish to Kafka">Status</TH>
+                <TH title="Ledger acceptance (async)">Outcome</TH>
                 <TH>Chaos</TH>
                 <TH>Correlation ID</TH>
                 <TH>Created</TH>
@@ -268,6 +346,13 @@ function SentHistoryTab({ filters }: { filters: HistoryFilters }) {
                     </Badge>
                   </TD>
                   <TD>
+                    <OutcomeCell
+                      record={record}
+                      failureMap={failureMap}
+                      loading={failuresQuery.isLoading}
+                    />
+                  </TD>
+                  <TD>
                     {record.chaosStrategy ? (
                       <Badge variant="warning">{record.chaosStrategy}</Badge>
                     ) : (
@@ -298,6 +383,11 @@ function SentHistoryTab({ filters }: { filters: HistoryFilters }) {
 
       <HistoryDetailDialog
         record={selectedRecord}
+        failure={
+          selectedRecord?.transactionRequestId
+            ? failureMap.get(selectedRecord.transactionRequestId) ?? null
+            : null
+        }
         open={detailOpen}
         onOpenChange={setDetailOpen}
       />
@@ -576,7 +666,13 @@ function AccountLedgerHistoryTab({ accountId }: { accountId: string }) {
     placeholderData: keepPreviousData
   });
 
-  const records = query.data?.items ?? [];
+  // Render strictly newest-first by the account's own monotonic sequence. The ledger already
+  // paginates newest-first (posted_at DESC ⇒ account_sequence DESC) but breaks within-entry ties
+  // with account_sequence ASC; sorting here makes the per-account sequence strictly descending down
+  // the page and stays consistent with the cursor direction across pages.
+  const records = [...(query.data?.items ?? [])].sort(
+    (a, b) => b.accountSequence - a.accountSequence
+  );
   const hasPrevious = cursorStack.length > 0;
   const hasNext = Boolean(query.data?.hasMore && query.data?.nextCursor);
   const is503 = isLedgerProxyUnavailable(query.error);
@@ -694,7 +790,9 @@ function AccountLedgerHistoryTab({ accountId }: { accountId: string }) {
               <THead>{HISTORY_COLUMNS}</THead>
               <TBody>
                 {records.map(tx => {
-                  const balanceBefore = balanceBeforeOf(tx, normalBalance);
+                  // Prefer the ledger's total balance before this line; fall back to the locally
+                  // derived available-balance-before until the ledger emits totalBalanceBefore.
+                  const balanceBefore = tx.totalBalanceBefore ?? balanceBeforeOf(tx, normalBalance);
                   return (
                     <TR
                       key={tx.lineId}

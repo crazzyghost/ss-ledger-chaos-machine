@@ -1,22 +1,31 @@
 package com.softspark.chaos.ledgerproxy.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 /**
  * DTO mirroring the ledger's account balance response.
  *
+ * <p>The ledger's REST DTOs serialize camelCase (only its Kafka event payloads use snake_case), so
+ * this record maps the ledger's {@code BalanceResponse} field-for-field by camelCase name. An
+ * earlier {@code @JsonNaming(SnakeCaseStrategy)} on this record left {@code accountId} and the
+ * balance timestamp silently {@code null}; it has been removed so the camelCase contract binds in
+ * both directions — deserializing from the ledger and serializing to the chaos UI (Phase 015 /
+ * ADR-020). The same record carries the point-in-time snapshot returned for an {@code asOf} query.
+ *
  * @param accountId the account UUID
- * @param balance the current ledger balance
- * @param availableBalance the available (spendable) balance
+ * @param available the available (spendable) balance
+ * @param total the total balance
+ * @param pending the pending balance
+ * @param reserved the reserved balance
  * @param currency the ISO-4217 currency code
- * @param updatedAt ISO-8601 timestamp of the last balance update
+ * @param lastEntrySequence the account's last applied entry sequence at this snapshot
+ * @param balanceAsOf the instant the snapshot reflects (the current time, or the requested {@code
+ *     asOf} point-in-time)
  */
 @RecordBuilder
-@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record LedgerBalanceDto(
     String accountId,
@@ -25,4 +34,5 @@ public record LedgerBalanceDto(
     BigDecimal pending,
     BigDecimal reserved,
     String currency,
-    String updatedAt) {}
+    long lastEntrySequence,
+    LocalDateTime balanceAsOf) {}

@@ -4,6 +4,8 @@ import com.softspark.chaos.base.CursorPageResponse;
 import com.softspark.chaos.base.PageResponse;
 import com.softspark.chaos.exception.InternalServerErrorException;
 import com.softspark.chaos.ledgerproxy.circuitbreaker.CircuitBreakerOpenException;
+import com.softspark.chaos.ledgerproxy.dto.BatchBalanceItemDto;
+import com.softspark.chaos.ledgerproxy.dto.DisbursementBatchSummaryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
@@ -18,7 +20,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -102,19 +106,58 @@ public class LedgerReadController {
   }
 
   /**
-   * Retrieves balances for a single account from the ledger.
+   * Retrieves balances for a single account from the ledger, optionally as of a point in time.
+   *
+   * <p>When {@code asOf} is supplied it is forwarded verbatim to the ledger, which reconstructs the
+   * historical snapshot from its journal-line running-balance witnesses (ADR-020). The value is a
+   * zoneless {@link LocalDateTime} interpreted in the ledger's zone; the ledger rejects a
+   * future-dated {@code asOf} with a {@code 400}, which surfaces here as the standard 4xx error
+   * (never a {@code 500}).
    *
    * @param id the ledger account UUID
+   * @param asOf optional point-in-time (ISO-8601 local date-time); absent reads the current balance
    * @param request the HTTP request
    * @return the balance DTO
    */
   @GetMapping("/accounts/{id}/balance")
-  @Operation(summary = "Get account balance", description = "Proxy to a ledger account balance")
+  @Operation(
+      summary = "Get account balance (optionally as of a point in time)",
+      description = "Proxy to a ledger account balance, optionally as of the given datetime")
   public ResponseEntity<LedgerBalanceDto> getAccountBalance(
-      @PathVariable String id, HttpServletRequest request) {
+      @PathVariable String id,
+      @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+          LocalDateTime asOf,
+      HttpServletRequest request) {
     var token = extractToken(request);
     try {
-      return ResponseEntity.ok(ledgerClient.getAccountBalance(token, id));
+      return ResponseEntity.ok(ledgerClient.getAccountBalance(token, id, asOf));
+    } catch (CircuitBreakerOpenException e) {
+      throw new InternalServerErrorException("Ledger service temporarily unavailable");
+    }
+  }
+
+  /**
+   * Retrieves balances for several accounts in a single call (read-through to the ledger's batch
+   * balance lookup).
+   *
+   * <p>Backs the virtual-account list views' total-balance column: the UI collects the visible
+   * page's account ids and issues one batch call rather than N per-row reads (ADR-021). Each item
+   * carries the ledger's per-account {@code status} ({@code FOUND}/{@code NOT_FOUND}/{@code
+   * FORBIDDEN}); the ledger's paged envelope is unwrapped to a flat list.
+   *
+   * @param accountIds the account UUIDs to look up (repeated {@code accountId} params)
+   * @param request the HTTP request
+   * @return one balance item per requested account id
+   */
+  @GetMapping("/balances")
+  @Operation(
+      summary = "Batch account balances",
+      description = "Read-through to the ledger's batch balance lookup")
+  public ResponseEntity<List<BatchBalanceItemDto>> getBatchBalances(
+      @RequestParam("accountId") List<String> accountIds, HttpServletRequest request) {
+    var token = extractToken(request);
+    try {
+      return ResponseEntity.ok(ledgerClient.getBatchBalances(token, accountIds));
     } catch (CircuitBreakerOpenException e) {
       throw new InternalServerErrorException("Ledger service temporarily unavailable");
     }
@@ -282,6 +325,35 @@ public class LedgerReadController {
     var token = extractToken(request);
     try {
       return ResponseEntity.ok(ledgerClient.getTrialBalance(token, from, to, currency));
+    } catch (CircuitBreakerOpenException e) {
+      throw new InternalServerErrorException("Ledger service temporarily unavailable");
+    }
+  }
+
+  /**
+   * Returns the ledger's disbursement batch summary, keyed by {@code batchId} (read-through to the
+   * ledger).
+   *
+   * <p>Backs the batch-disbursement flows' {@code reservation_id} sourcing and live progress
+   * (ADR-023): after the reservation is published, the wizard polls this endpoint by {@code batch_id}
+   * until the ledger-created reservation appears, and drives its progress panel from the same
+   * response; the automatic run-results view renders the ledger-side batch status + counters. The
+   * {@code reservationId} is null until the reservation lands.
+   *
+   * @param batchId the batch id (the driver-controlled {@code batch_id})
+   * @param request the HTTP request
+   * @return the batch summary
+   */
+  @GetMapping("/disbursement-batches/{batchId}")
+  @Operation(
+      summary = "Get disbursement batch summary",
+      description =
+          "Proxy to the ledger's disbursement batch summary (reservation_id + status + counters)")
+  public ResponseEntity<DisbursementBatchSummaryDto> getDisbursementBatch(
+      @PathVariable String batchId, HttpServletRequest request) {
+    var token = extractToken(request);
+    try {
+      return ResponseEntity.ok(ledgerClient.getDisbursementBatch(token, batchId));
     } catch (CircuitBreakerOpenException e) {
       throw new InternalServerErrorException("Ledger service temporarily unavailable");
     }

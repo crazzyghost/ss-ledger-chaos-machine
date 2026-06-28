@@ -19,23 +19,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import {
   createVirtualAccount,
+  getBatchBalances,
   listCurrencies,
   listLedgerAccounts,
   listSupportedCountries,
   listVirtualAccounts,
+  type BatchBalanceItem,
   type LedgerAccountFilters,
   type VirtualAccountFilters
 } from "@/lib/api";
 import {
   formatDate,
   formatEnumValue,
+  formatMoney,
   getAccountCategoryVariant,
   getStatusBadgeVariant
 } from "@/lib/utils";
 import { usePersistedTabs } from "@/lib/use-persisted-tabs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, Plus, Wallet } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const PER_PAGE = 20;
@@ -372,11 +375,40 @@ const ACCOUNT_COLUMNS = (
     <TH>Name</TH>
     <TH>Category</TH>
     <TH>Currency</TH>
+    <TH className="text-right">Balance</TH>
     <TH>Owner</TH>
     <TH>Status</TH>
     <TH>Date created</TH>
   </TR>
 );
+
+/** Renders a row's total ledger balance, with loading and not-available (—) fallbacks. */
+function BalanceCell({
+  item,
+  loading,
+  rowCurrency
+}: {
+  item: BatchBalanceItem | undefined;
+  loading: boolean;
+  rowCurrency: string | null;
+}) {
+  if (item && item.status === "FOUND" && item.totalBalance != null) {
+    return (
+      <TD className="text-right tabular-nums">
+        {formatMoney(item.totalBalance, item.currency ?? rowCurrency ?? "GHS")}
+      </TD>
+    );
+  }
+  return (
+    <TD className="text-right tabular-nums">
+      {loading && !item ? (
+        <span className="inline-block h-3 w-16 animate-pulse rounded bg-muted/60 align-middle" />
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      )}
+    </TD>
+  );
+}
 
 /** Shared table for both account tables: Name / Category / Owner / Status / Date created. */
 function AccountsTable({
@@ -388,7 +420,9 @@ function AccountsTable({
   errorTone,
   empty,
   onRetry,
-  onRowClick
+  onRowClick,
+  balanceById,
+  balancesLoading
 }: {
   rows: AccountRow[];
   isLoading: boolean;
@@ -399,6 +433,8 @@ function AccountsTable({
   empty: { title: string; description: string; icon: ReactNode };
   onRetry: () => void;
   onRowClick: (id: string) => void;
+  balanceById: Map<string, BatchBalanceItem>;
+  balancesLoading: boolean;
 }) {
   if (isLoading) {
     return (
@@ -406,7 +442,7 @@ function AccountsTable({
         <Table>
           <THead>{ACCOUNT_COLUMNS}</THead>
           <TBody>
-            <TableLoadingRows columns={6} rows={6} />
+            <TableLoadingRows columns={7} rows={6} />
           </TBody>
         </Table>
       </TableContainer>
@@ -464,6 +500,11 @@ function AccountsTable({
                 )}
               </TD>
               <TD>{row.currency ?? "—"}</TD>
+              <BalanceCell
+                item={balanceById.get(row.id)}
+                loading={balancesLoading}
+                rowCurrency={row.currency}
+              />
               <TD>
                 <div className="flex flex-col">
                   <span className="text-xs text-muted-foreground">
@@ -533,6 +574,21 @@ function ChaosAccountsTab({ pollUntil }: { pollUntil: number }) {
   const total = query.data?.total ?? 0;
   const hasNextPage = (page + 1) * PER_PAGE < total;
 
+  // One batch-balance call per page feeds the total-balance column. Keeps polling during the
+  // post-create window so a new VA's balance fills in once the ledger has it.
+  const accountIds = useMemo(() => (query.data?.items ?? []).map(a => a.vaId), [query.data]);
+  const balancesQuery = useQuery({
+    queryKey: ["page-balances", accountIds],
+    queryFn: () => getBatchBalances(token!, accountIds),
+    enabled: accountIds.length > 0,
+    refetchInterval: () => (Date.now() < pollUntil ? 3000 : false)
+  });
+  const balanceById = useMemo(() => {
+    const m = new Map<string, BatchBalanceItem>();
+    (balancesQuery.data ?? []).forEach(it => m.set(it.accountId, it));
+    return m;
+  }, [balancesQuery.data]);
+
   function applyFilters() {
     setPage(0);
     setApplied(draft);
@@ -575,6 +631,8 @@ function ChaosAccountsTab({ pollUntil }: { pollUntil: number }) {
           }}
           onRetry={() => void query.refetch()}
           onRowClick={id => navigate(`/virtual-accounts/${id}`)}
+          balanceById={balanceById}
+          balancesLoading={balancesQuery.isLoading}
         />
         <ListPagination
           page={page}
@@ -632,6 +690,20 @@ function LedgerAccountsTab() {
   const total = query.data?.total ?? 0;
   const hasNextPage = (page + 1) * PER_PAGE < total;
 
+  // One batch-balance call per page feeds the total-balance column.
+  const accountIds = useMemo(() => (query.data?.items ?? []).map(a => a.accountId), [query.data]);
+  const balancesQuery = useQuery({
+    queryKey: ["page-balances", accountIds],
+    queryFn: () => getBatchBalances(token!, accountIds),
+    enabled: accountIds.length > 0,
+    retry: false
+  });
+  const balanceById = useMemo(() => {
+    const m = new Map<string, BatchBalanceItem>();
+    (balancesQuery.data ?? []).forEach(it => m.set(it.accountId, it));
+    return m;
+  }, [balancesQuery.data]);
+
   function applyFilters() {
     setPage(0);
     setApplied(draft);
@@ -671,6 +743,8 @@ function LedgerAccountsTab() {
           }}
           onRetry={() => void query.refetch()}
           onRowClick={id => navigate(`/virtual-accounts/${id}`)}
+          balanceById={balanceById}
+          balancesLoading={balancesQuery.isLoading}
         />
         <ListPagination
           page={page}

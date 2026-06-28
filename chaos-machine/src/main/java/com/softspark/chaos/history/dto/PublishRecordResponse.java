@@ -16,6 +16,8 @@ import org.springframework.lang.Nullable;
  * @param correlationId the correlation identifier
  * @param idempotencyKey the idempotency key
  * @param tenantId the tenant identifier
+ * @param transactionRequestId the canonical request id (correlation key for ledger outcomes); null
+ *     for non-transactional flows and historical rows
  * @param sourceVaId the source virtual account id
  * @param destinationVaId the destination virtual account id
  * @param status {@code "PUBLISHED"} or {@code "FAILED"}
@@ -38,6 +40,7 @@ public record PublishRecordResponse(
     @Nullable String correlationId,
     @Nullable String idempotencyKey,
     @Nullable String tenantId,
+    @Nullable String transactionRequestId,
     @Nullable String sourceVaId,
     @Nullable String destinationVaId,
     String status,
@@ -66,6 +69,7 @@ public record PublishRecordResponse(
         record.getCorrelationId(),
         record.getIdempotencyKey(),
         record.getTenantId(),
+        record.getTransactionRequestId(),
         record.getSourceVaId(),
         record.getDestinationVaId(),
         record.getStatus(),

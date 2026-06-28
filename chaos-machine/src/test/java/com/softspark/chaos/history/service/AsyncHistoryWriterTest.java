@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.softspark.chaos.flow.FlowBuilderRegistry;
 import com.softspark.chaos.flow.FlowRequest;
 import com.softspark.chaos.flow.FlowRequestBuilder;
 import com.softspark.chaos.flow.model.FlowType;
@@ -37,6 +38,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class AsyncHistoryWriterTest {
 
   @Mock private PublishRecordRepository repository;
+  @Mock private FlowBuilderRegistry builderRegistry;
 
   private AsyncHistoryWriter writer;
 
@@ -45,7 +47,7 @@ class AsyncHistoryWriterTest {
     ObjectMapper mapper = new ObjectMapper();
     mapper.registerModule(new JavaTimeModule());
     mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    writer = new AsyncHistoryWriter(100, repository, mapper);
+    writer = new AsyncHistoryWriter(100, repository, mapper, builderRegistry);
     writer.startDrainThread();
   }
 
@@ -132,7 +134,7 @@ class AsyncHistoryWriterTest {
       ObjectMapper mapper = new ObjectMapper();
       mapper.registerModule(new JavaTimeModule());
       mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-      var tinyWriter = new AsyncHistoryWriter(2, repository, mapper);
+      var tinyWriter = new AsyncHistoryWriter(2, repository, mapper, builderRegistry);
       // Do NOT start drain thread so queue fills up
 
       var publishResult = new ChaosEventPublisher.PublishResult(1L, 0);

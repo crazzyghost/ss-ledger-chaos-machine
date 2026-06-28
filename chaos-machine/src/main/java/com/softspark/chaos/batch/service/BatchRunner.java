@@ -6,6 +6,7 @@ import com.softspark.chaos.batch.model.BatchRow;
 import com.softspark.chaos.batch.model.BatchRun;
 import com.softspark.chaos.batch.repository.BatchRowRepository;
 import com.softspark.chaos.batch.repository.BatchRunRepository;
+import com.softspark.chaos.flow.BatchDisbursementRunner;
 import com.softspark.chaos.flow.FlowEngine;
 import com.softspark.chaos.flow.FlowRequest;
 import com.softspark.chaos.flow.FlowRequestBuilder;
@@ -73,6 +74,16 @@ public class BatchRunner {
       BatchRow row, FlowRequest initiated, FlowLifecycle lifecycle, long seed, int index) {}
 
   /**
+   * Pairs a {@link BatchRow} with its zero-based item index within a batch-disbursement run. The
+   * item's amounts/outcome and the shared batch identity live in the {@link BatchDisbursementRunner}
+   * plan, keyed by this index.
+   *
+   * @param row the batch row entity (one item)
+   * @param index the zero-based item index within the batch
+   */
+  public record BatchDisbursementUnit(BatchRow row, int index) {}
+
+  /**
    * Executes the given batch rows asynchronously and updates the batch run on completion.
    *
    * @param batchRunId the batch run id to update
@@ -135,6 +146,33 @@ public class BatchRunner {
     Thread.ofVirtual()
         .name("lifecycle-runner-" + batchRunId)
         .start(() -> runLifecycle(batchRunId, units, plan, total, lifecycleRunner));
+  }
+
+  /**
+   * Executes an unattended batch-disbursement run asynchronously. The single reservation is published
+   * once (and its {@code reservation_id} stamped on the run) <em>before</em> the pacing-aware item
+   * loop; each item is then a request+terminal unit — a row is {@code PUBLISHED} only when both the
+   * {@code item.request} and the terminal publish succeed, else {@code FAILED}. Status rolls up via
+   * the existing {@link #finalizeRun}.
+   *
+   * @param batchRunId the run id to update
+   * @param plan the fully-resolved batch plan (split + outcomes + template)
+   * @param units the per-item units (row + index)
+   * @param pacing the pacing plan (concurrency + inter-item delay)
+   * @param total the item count N (for the history label)
+   * @param runner the batch-disbursement publisher
+   */
+  public void executeBatchDisbursement(
+      String batchRunId,
+      BatchDisbursementRunner.Plan plan,
+      List<BatchDisbursementUnit> units,
+      PacingPlan pacing,
+      int total,
+      BatchDisbursementRunner runner) {
+
+    Thread.ofVirtual()
+        .name("batch-disb-runner-" + batchRunId)
+        .start(() -> runBatchDisbursement(batchRunId, plan, units, pacing, total, runner));
   }
 
   private void runBatch(
@@ -282,6 +320,95 @@ public class BatchRunner {
     }
 
     finalizeRun(batchRunId);
+  }
+
+  private void runBatchDisbursement(
+      String batchRunId,
+      BatchDisbursementRunner.Plan plan,
+      List<BatchDisbursementUnit> units,
+      PacingPlan pacing,
+      int total,
+      BatchDisbursementRunner runner) {
+
+    // Publish the single reservation first and stamp the resolved reservation_id on the run.
+    String reservationId = runner.publishReservation(plan);
+    stampReservation(batchRunId, reservationId);
+
+    int concurrency = Math.max(1, Math.min(pacing.concurrency(), maxWorkers));
+    var semaphore = new Semaphore(concurrency);
+    boolean first = true;
+
+    try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+      for (BatchDisbursementUnit unit : units) {
+        if (unit.row().getStatus() != BatchRowStatus.PENDING) {
+          continue;
+        }
+
+        if (!first) {
+          applyRateDelay(pacing.delayMs().getAsLong());
+        }
+        first = false;
+
+        try {
+          semaphore.acquire();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          log.warn("Batch-disbursement runner interrupted for run {}", batchRunId);
+          break;
+        }
+
+        executor.submit(
+            () -> {
+              try {
+                processBatchDisbursementRow(unit, runner, plan, reservationId);
+              } finally {
+                semaphore.release();
+              }
+            });
+      }
+    }
+
+    finalizeRun(batchRunId);
+  }
+
+  /**
+   * Runs one batch item (request + terminal). Intentionally <em>not</em> {@code @Transactional}: the
+   * two publishes can be slow and the datasource pool is tiny, so we only touch the DB for the brief
+   * row-status save.
+   */
+  void processBatchDisbursementRow(
+      BatchDisbursementUnit unit,
+      BatchDisbursementRunner runner,
+      BatchDisbursementRunner.Plan plan,
+      String reservationId) {
+    BatchRow row = unit.row();
+    try {
+      BatchDisbursementRunner.ItemResult result = runner.runItem(plan, unit.index(), reservationId);
+      if (result.success()) {
+        row.setStatus(BatchRowStatus.PUBLISHED);
+        row.setEventId(result.requestEventId());
+      } else {
+        row.setStatus(BatchRowStatus.FAILED);
+        row.setError("Batch item publish failed (request or terminal event did not publish)");
+      }
+      batchRowRepository.save(row);
+    } catch (Exception e) {
+      log.error("Batch item row {} failed: {}", row.getId(), e.getMessage(), e);
+      row.setStatus(BatchRowStatus.FAILED);
+      row.setError(e.getMessage());
+      batchRowRepository.save(row);
+    }
+  }
+
+  @Transactional
+  void stampReservation(String batchRunId, String reservationId) {
+    batchRunRepository
+        .findById(batchRunId)
+        .ifPresent(
+            run -> {
+              run.setReservationId(reservationId);
+              batchRunRepository.save(run);
+            });
   }
 
   @Transactional

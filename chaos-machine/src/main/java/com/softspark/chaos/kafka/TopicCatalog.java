@@ -1,6 +1,7 @@
 package com.softspark.chaos.kafka;
 
 import com.softspark.chaos.flow.model.FlowType;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -29,7 +30,39 @@ public class TopicCatalog {
   private String disbursementInitiated = "disbursement.initiated";
   private String disbursementCompleted = "disbursement.completed";
   private String disbursementFailed = "disbursement.failed";
+  private String disbursementBatchInitiated = "disbursement.batch.initiated";
+  private String disbursementBatchItemCompleted = "disbursement.batch.item.completed";
+  private String disbursementBatchItemFailed = "disbursement.batch.item.failed";
   private String ledgerAccountCreated = "ledger.account.created";
+  private String ledgerTransactionFailed = "ledger.transaction.failed";
+  private String ledgerBalanceUpdated = "ledger.balance.updated";
+  private String ledgerReservationCreated = "ledger.reservation.created";
+  private String ledgerReservationReleased = "ledger.reservation.released";
+
+  /**
+   * The ledger's 17 inbound dead-letter topics (Phase 020, ADR-029). An explicit list — not a
+   * {@code ledger\..*\.dlt} wildcard — so the chaos machine's own outbound-event DLTs (a different
+   * format) are deliberately excluded. Overridable via {@code chaos.topics.ledger-dlts}.
+   */
+  private List<String> ledgerDlts =
+      List.of(
+          "ledger.collection.completed.dlt",
+          "ledger.disbursement.initiated.dlt",
+          "ledger.disbursement.completed.dlt",
+          "ledger.disbursement.failed.dlt",
+          "ledger.disbursement.batch.initiated.dlt",
+          "ledger.disbursement.batch.item.completed.dlt",
+          "ledger.disbursement.batch.item.failed.dlt",
+          "ledger.organization.va.settlement.initiated.dlt",
+          "ledger.organization.va.settlement.completed.dlt",
+          "ledger.organization.va.settlement.failed.dlt",
+          "ledger.organization.onboarded.dlt",
+          "ledger.organization.va.updated.dlt",
+          "ledger.organization.topup.confirmed.dlt",
+          "ledger.organization.transfer.requested.dlt",
+          "ledger.organization.treasury.prefund.completed.dlt",
+          "ledger.organization.treasury.sweep.completed.dlt",
+          "ledger.organization.treasury.transfer.completed.dlt");
 
   public String getOrganizationOnboarded() {
     return organizationOnboarded;
@@ -175,6 +208,61 @@ public class TopicCatalog {
   }
 
   /**
+   * Returns the topic for batch-disbursement initiated events (shared by the batch reservation
+   * request and the per-item request, discriminated by the payload {@code operation} field).
+   *
+   * @return the {@code disbursement.batch.initiated} topic name
+   */
+  public String getDisbursementBatchInitiated() {
+    return disbursementBatchInitiated;
+  }
+
+  /**
+   * Sets the topic for batch-disbursement initiated events.
+   *
+   * @param disbursementBatchInitiated the topic name
+   */
+  public void setDisbursementBatchInitiated(String disbursementBatchInitiated) {
+    this.disbursementBatchInitiated = disbursementBatchInitiated;
+  }
+
+  /**
+   * Returns the topic for batch-disbursement item-completed events.
+   *
+   * @return the {@code disbursement.batch.item.completed} topic name
+   */
+  public String getDisbursementBatchItemCompleted() {
+    return disbursementBatchItemCompleted;
+  }
+
+  /**
+   * Sets the topic for batch-disbursement item-completed events.
+   *
+   * @param disbursementBatchItemCompleted the topic name
+   */
+  public void setDisbursementBatchItemCompleted(String disbursementBatchItemCompleted) {
+    this.disbursementBatchItemCompleted = disbursementBatchItemCompleted;
+  }
+
+  /**
+   * Returns the topic for batch-disbursement item-failed events.
+   *
+   * @return the {@code disbursement.batch.item.failed} topic name
+   */
+  public String getDisbursementBatchItemFailed() {
+    return disbursementBatchItemFailed;
+  }
+
+  /**
+   * Sets the topic for batch-disbursement item-failed events.
+   *
+   * @param disbursementBatchItemFailed the topic name
+   */
+  public void setDisbursementBatchItemFailed(String disbursementBatchItemFailed) {
+    this.disbursementBatchItemFailed = disbursementBatchItemFailed;
+  }
+
+  /**
    * Returns the topic the chaos machine consumes for ledger account-created events.
    *
    * @return the {@code ledger.account.created} topic name
@@ -190,6 +278,109 @@ public class TopicCatalog {
    */
   public void setLedgerAccountCreated(String ledgerAccountCreated) {
     this.ledgerAccountCreated = ledgerAccountCreated;
+  }
+
+  /**
+   * Returns the topic the chaos machine consumes for ledger transaction-failed events (Part 1 of
+   * the ledger-outbound series).
+   *
+   * @return the {@code ledger.transaction.failed} topic name
+   */
+  public String getLedgerTransactionFailed() {
+    return ledgerTransactionFailed;
+  }
+
+  /**
+   * Sets the topic the chaos machine consumes for ledger transaction-failed events.
+   *
+   * @param ledgerTransactionFailed the topic name
+   */
+  public void setLedgerTransactionFailed(String ledgerTransactionFailed) {
+    this.ledgerTransactionFailed = ledgerTransactionFailed;
+  }
+
+  /**
+   * Returns the topic the chaos machine consumes for ledger balance-updated events (Part 2).
+   *
+   * @return the {@code ledger.balance.updated} topic name
+   */
+  public String getLedgerBalanceUpdated() {
+    return ledgerBalanceUpdated;
+  }
+
+  /**
+   * Sets the topic the chaos machine consumes for ledger balance-updated events.
+   *
+   * @param ledgerBalanceUpdated the topic name
+   */
+  public void setLedgerBalanceUpdated(String ledgerBalanceUpdated) {
+    this.ledgerBalanceUpdated = ledgerBalanceUpdated;
+  }
+
+  /**
+   * Returns the topic the chaos machine consumes for ledger reservation-created events (Part 3).
+   *
+   * @return the {@code ledger.reservation.created} topic name
+   */
+  public String getLedgerReservationCreated() {
+    return ledgerReservationCreated;
+  }
+
+  /**
+   * Sets the topic the chaos machine consumes for ledger reservation-created events.
+   *
+   * @param ledgerReservationCreated the topic name
+   */
+  public void setLedgerReservationCreated(String ledgerReservationCreated) {
+    this.ledgerReservationCreated = ledgerReservationCreated;
+  }
+
+  /**
+   * Returns the topic the chaos machine consumes for ledger reservation-released events (Part 3).
+   *
+   * @return the {@code ledger.reservation.released} topic name
+   */
+  public String getLedgerReservationReleased() {
+    return ledgerReservationReleased;
+  }
+
+  /**
+   * Sets the topic the chaos machine consumes for ledger reservation-released events.
+   *
+   * @param ledgerReservationReleased the topic name
+   */
+  public void setLedgerReservationReleased(String ledgerReservationReleased) {
+    this.ledgerReservationReleased = ledgerReservationReleased;
+  }
+
+  /**
+   * Returns the explicit list of ledger inbound dead-letter topics the DLQ consumer subscribes to.
+   *
+   * @return the {@code ledger.<flow>.dlt} topic names
+   */
+  public List<String> getLedgerDlts() {
+    return ledgerDlts;
+  }
+
+  /**
+   * Sets the list of ledger inbound dead-letter topics the DLQ consumer subscribes to.
+   *
+   * @param ledgerDlts the topic names
+   */
+  public void setLedgerDlts(List<String> ledgerDlts) {
+    this.ledgerDlts = ledgerDlts;
+  }
+
+  /**
+   * Derives the dead-letter topic for a source topic by appending {@code .dlt}. The DLT
+   * publishing recoverer uses the same rule, so every ledger-outbound listener dead-letters to its
+   * own {@code <topic>.dlt} with no per-event configuration.
+   *
+   * @param topic the source topic
+   * @return {@code topic + ".dlt"}
+   */
+  public static String dltFor(String topic) {
+    return topic + ".dlt";
   }
 
   /**
@@ -215,6 +406,10 @@ public class TopicCatalog {
       case DISBURSEMENT_INITIATED -> disbursementInitiated;
       case DISBURSEMENT_COMPLETED -> disbursementCompleted;
       case DISBURSEMENT_FAILED -> disbursementFailed;
+      case DISBURSEMENT_BATCH_RESERVATION_REQUEST, DISBURSEMENT_BATCH_ITEM_REQUEST ->
+          disbursementBatchInitiated;
+      case DISBURSEMENT_BATCH_ITEM_COMPLETED -> disbursementBatchItemCompleted;
+      case DISBURSEMENT_BATCH_ITEM_FAILED -> disbursementBatchItemFailed;
     };
   }
 }

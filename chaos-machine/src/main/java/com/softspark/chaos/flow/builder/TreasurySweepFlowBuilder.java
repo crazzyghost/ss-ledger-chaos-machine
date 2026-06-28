@@ -32,6 +32,11 @@ public class TreasurySweepFlowBuilder implements FlowBuilder<TreasurySweepComple
   }
 
   @Override
+  public java.util.Optional<String> transactionRequestIdField() {
+    return java.util.Optional.of("sweep_request_id");
+  }
+
+  @Override
   public String source() {
     return "treasury-service";
   }

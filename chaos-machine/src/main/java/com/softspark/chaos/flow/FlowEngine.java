@@ -103,6 +103,9 @@ public class FlowEngine {
     List<PreparedSend> sends = chaosPlan.expand(envelope, ctx, request.chaos());
     String topic = topicCatalog.topicFor(request.flowType());
     String partitionKey = builder.partitionKey(ctx);
+    // The request id is intrinsic to the request (same for all sends of one execution); resolved
+    // once and echoed on the result so the client can watch for a matching ledger failure (ADR-025).
+    String transactionRequestId = registry.transactionRequestIdValue(request).orElse(null);
 
     FlowResult result = null;
     for (PreparedSend send : sends) {
@@ -135,7 +138,8 @@ public class FlowEngine {
                 published.offset(),
                 "PUBLISHED",
                 historyId,
-                null);
+                null,
+                transactionRequestId);
       } catch (EventPublishException e) {
         log.error(
             "Failed to publish flow {} event {}: {}",
@@ -145,7 +149,16 @@ public class FlowEngine {
             e);
         String historyId =
             historyWriter.recordFailure(send.envelope(), topic, e.getMessage(), request);
-        result = new FlowResult(ctx.eventId(), topic, -1, -1L, "FAILED", historyId, e.getMessage());
+        result =
+            new FlowResult(
+                ctx.eventId(),
+                topic,
+                -1,
+                -1L,
+                "FAILED",
+                historyId,
+                e.getMessage(),
+                transactionRequestId);
       }
     }
 

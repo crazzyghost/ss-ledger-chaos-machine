@@ -15,5 +15,11 @@ public enum RunKind {
   /** An N-Times distinct-transaction run. */
   N_TIMES,
   /** A RANDOM-outcome lifecycle run (each row publishes initiated then completed|failed). */
-  LIFECYCLE
+  LIFECYCLE,
+  /**
+   * An unattended batch-disbursement run (Phase 016): one shared reservation, then each row is a
+   * single batch item — a request + terminal (completed|failed) unit. The run's
+   * {@code external_batch_id}/{@code reservation_id} deep-link to the ledger batch summary.
+   */
+  BATCH_DISBURSEMENT
 }

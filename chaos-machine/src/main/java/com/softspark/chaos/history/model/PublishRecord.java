@@ -43,6 +43,9 @@ public class PublishRecord {
   @Column(name = "tenant_id")
   private String tenantId;
 
+  @Column(name = "transaction_request_id")
+  private String transactionRequestId;
+
   @Column(name = "source_va_id")
   private String sourceVaId;
 
@@ -139,6 +142,14 @@ public class PublishRecord {
 
   public void setTenantId(String tenantId) {
     this.tenantId = tenantId;
+  }
+
+  public String getTransactionRequestId() {
+    return transactionRequestId;
+  }
+
+  public void setTransactionRequestId(String transactionRequestId) {
+    this.transactionRequestId = transactionRequestId;
   }
 
   public String getSourceVaId() {

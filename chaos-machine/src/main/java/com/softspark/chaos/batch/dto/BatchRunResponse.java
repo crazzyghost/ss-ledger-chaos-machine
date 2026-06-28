@@ -23,6 +23,10 @@ import org.springframework.lang.Nullable;
  * @param status the run status
  * @param createdAt the run creation timestamp
  * @param completedAt the run completion timestamp; null while still running
+ * @param externalBatchId the ledger {@code batch_id} for a BATCH_DISBURSEMENT run (deep-link key);
+ *     null otherwise
+ * @param reservationId the ledger-resolved {@code reservation_id} for a BATCH_DISBURSEMENT run; null
+ *     otherwise
  */
 @RecordBuilder
 public record BatchRunResponse(
@@ -38,7 +42,9 @@ public record BatchRunResponse(
     int invalid,
     BatchRunStatus status,
     Instant createdAt,
-    @Nullable Instant completedAt) {
+    @Nullable Instant completedAt,
+    @Nullable String externalBatchId,
+    @Nullable String reservationId) {
 
   /**
    * Maps a {@link BatchRun} entity to a {@link BatchRunResponse}.
@@ -60,6 +66,8 @@ public record BatchRunResponse(
         run.getInvalid(),
         run.getStatus(),
         run.getCreatedAt(),
-        run.getCompletedAt());
+        run.getCompletedAt(),
+        run.getExternalBatchId(),
+        run.getReservationId());
   }
 }

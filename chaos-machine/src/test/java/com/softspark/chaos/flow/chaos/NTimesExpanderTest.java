@@ -29,7 +29,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("NTimesExpander")
 class NTimesExpanderTest {
 
-  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 250, 25, 60000L);
+  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 250, 25, 60000L, 100);
 
   private FlowCatalogProvider catalogProvider;
   private NTimesExpander expander;
@@ -324,8 +324,12 @@ class NTimesExpanderTest {
   class CatalogCoverage {
 
     static Stream<FlowCatalogEntry> runnerVisibleFlows() {
+      // Batch-disbursement (batchGroup) is driven by its own runner/wizard, not the N-Times
+      // expander, and has no single re-rollable transaction id — exclude it from this coverage.
       return new FlowCatalogProvider(new TopicCatalog())
-          .catalog().stream().filter(FlowCatalogEntry::runnerVisible);
+          .catalog().stream()
+          .filter(FlowCatalogEntry::runnerVisible)
+          .filter(e -> e.batchGroup() == null);
     }
 
     @ParameterizedTest(name = "{0}")

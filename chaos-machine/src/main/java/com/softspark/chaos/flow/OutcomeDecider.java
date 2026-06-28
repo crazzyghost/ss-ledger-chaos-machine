@@ -22,11 +22,24 @@ public class OutcomeDecider {
    * @return {@code true} for SUCCEED (publish completed), {@code false} for FAIL (publish failed)
    */
   public boolean succeeds(long seed, int index) {
+    return (mixed(seed, index) & 1L) == 0L;
+  }
+
+  /**
+   * Returns the deterministic SplitMix64-style mix of {@code (seed, index)} — the raw value behind
+   * {@link #succeeds(long, int)}. Useful for deterministic ranking (e.g. selecting a target number of
+   * "winners" from N items by mixed value).
+   *
+   * @param seed the per-run seed (see {@link #seedFor(String)})
+   * @param index the zero-based index
+   * @return the mixed value
+   */
+  public long mixed(long seed, int index) {
     long z = seed + (index + 1L) * 0x9E3779B97F4A7C15L;
     z = (z ^ (z >>> 30)) * 0xBF58476D1CE4E5B9L;
     z = (z ^ (z >>> 27)) * 0x94D049BB133111EBL;
     z = z ^ (z >>> 31);
-    return (z & 1L) == 0L;
+    return z;
   }
 
   /**

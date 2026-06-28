@@ -1,0 +1,7 @@
+- PART 3 of testing ledger kafka events
+- the ledger service produces messages as side effects of operations
+- the ledger.reservation.created event signifies a reservation has been created successfully
+- the ledger.reservation.released event signifies a reservation has been released/expired successfully
+- add a table to track reservations and their states
+    - factor in batch reservations
+- implement polling for toasts in the settlement and disbursements flows when reservations are created and released

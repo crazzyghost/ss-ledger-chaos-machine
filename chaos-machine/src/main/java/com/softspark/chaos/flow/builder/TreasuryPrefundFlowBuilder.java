@@ -32,6 +32,11 @@ public class TreasuryPrefundFlowBuilder implements FlowBuilder<TreasuryPrefundCo
   }
 
   @Override
+  public java.util.Optional<String> transactionRequestIdField() {
+    return java.util.Optional.of("prefund_request_id");
+  }
+
+  @Override
   public String source() {
     return "treasury-service";
   }

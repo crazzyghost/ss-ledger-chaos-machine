@@ -3,6 +3,7 @@ package com.softspark.chaos.flow;
 import com.softspark.chaos.flow.model.FlowType;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
@@ -60,5 +61,32 @@ public class FlowBuilderRegistry {
    */
   public Map<FlowType, FlowBuilder<?>> all() {
     return registry;
+  }
+
+  /**
+   * Returns the canonical transaction-request-id field name for a flow type, if it mints a
+   * transaction (ADR-025).
+   *
+   * @param type the flow type
+   * @return the request-id field name, or empty for non-transactional flows
+   */
+  public Optional<String> transactionRequestIdField(FlowType type) {
+    return get(type).transactionRequestIdField();
+  }
+
+  /**
+   * Resolves the concrete transaction-request-id value carried by a request — the value the ledger
+   * will file under {@code transactionRequestId}. Single-sourced through the builder's labelled
+   * field so the publish response and the {@code publish_record} column agree.
+   *
+   * @param request the flow request (post-expansion, so N-Times re-minted ids are honoured)
+   * @return the request id, or empty when the flow mints no transaction or the field is blank/absent
+   */
+  public Optional<String> transactionRequestIdValue(FlowRequest request) {
+    return transactionRequestIdField(request.flowType())
+        .map(field -> request.flowFields().get(field))
+        .map(Object::toString)
+        .map(String::trim)
+        .filter(value -> !value.isEmpty());
   }
 }

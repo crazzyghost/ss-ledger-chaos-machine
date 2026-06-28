@@ -49,7 +49,7 @@ class LifecycleRunnerTest {
             .findFirst()
             .orElseThrow();
     when(flowEngine.execute(any(), anyString()))
-        .thenReturn(new FlowResult("evt", "topic", 0, 0L, "PUBLISHED", "hist", null));
+        .thenReturn(new FlowResult("evt", "topic", 0, 0L, "PUBLISHED", "hist", null, null));
   }
 
   private FlowRequest baseInitiated() {

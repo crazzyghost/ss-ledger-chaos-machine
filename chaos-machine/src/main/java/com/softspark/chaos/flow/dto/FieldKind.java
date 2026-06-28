@@ -11,6 +11,12 @@ public enum FieldKind {
   UUID,
   /** A decimal monetary amount. */
   AMOUNT,
+  /**
+   * A non-negative whole number (e.g. the batch {@code item_count} N, or the automatic outcome
+   * {@code passCount}). Rendered as a constrained number input (min 1; the {@code item_count} max is
+   * the configured {@code chaos.limits.maxBatchItems}).
+   */
+  INTEGER,
   /** An ISO-8601 timestamp. */
   DATETIME,
   /** A constrained choice rendered from {@code options}. */

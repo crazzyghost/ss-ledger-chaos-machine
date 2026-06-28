@@ -312,6 +312,9 @@ export type PublishRecordResponse = {
   correlationId: string | null;
   idempotencyKey: string | null;
   tenantId: string | null;
+  // The canonical request id; correlation key for the ledger Outcome column (Phase 017). Null for
+  // non-transactional flows and historical rows.
+  transactionRequestId: string | null;
   sourceVaId: string | null;
   destinationVaId: string | null;
   status: string;
@@ -344,6 +347,7 @@ export type FieldKind =
   | "TEXT"
   | "UUID"
   | "AMOUNT"
+  | "INTEGER"
   | "DATETIME"
   | "SELECT"
   | "VA_REF"
@@ -387,6 +391,19 @@ export type FlowLifecycle = {
   carryOver: CarryOver[];
 };
 
+// Groups the four phases of a batch-disbursement fan-out (one reservation → N items, each item a
+// request → completed|failed) and the carry-over maps the wizard/runner use. Present (non-null) on
+// the reservation catalog entry; null otherwise. Mutually exclusive with `lifecycle`.
+export type BatchDisbursementGroup = {
+  label: string;
+  reservation: string;
+  itemRequest: string;
+  itemCompleted: string;
+  itemFailed: string;
+  reservationToItem: CarryOver[];
+  itemRequestToTerminal: CarryOver[];
+};
+
 export type FlowCatalogEntry = {
   flowType: string;
   topic: string;
@@ -398,6 +415,7 @@ export type FlowCatalogEntry = {
   csvColumns: string[];
   partitionKeyField: string;
   lifecycle: FlowLifecycle | null;
+  batchGroup: BatchDisbursementGroup | null;
 };
 
 export type DuplicateOptions = { count: number };
@@ -439,6 +457,9 @@ export type NTimesSyncResult = {
   correlationId: string;
   eventIds: string[];
   historyIds: string[];
+  // Per-iteration request ids (server-minted by the N-Times expander), order-aligned with eventIds;
+  // entries may be null for non-transactional flows (Phase 017).
+  transactionRequestIds: (string | null)[];
 };
 
 // Discriminated result of publishNTimes: SYNC returns an aggregate, ASYNC returns a run handle.
@@ -477,6 +498,9 @@ export type FlowResult = {
   status: string;
   historyId: string;
   error: string | null;
+  // The id the ledger files under transactionRequestId — the correlation key for the run-page
+  // failure/reservation watches; null for non-transactional flows (Phase 017).
+  transactionRequestId: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -487,11 +511,12 @@ export type BatchRunStatus =
   | "PENDING"
   | "RUNNING"
   | "COMPLETED"
+  | "COMPLETED_WITH_FAILURES"
   | "FAILED"
   | "CANCELLED"
   | string;
 
-export type RunKind = "CSV" | "N_TIMES" | "LIFECYCLE" | string;
+export type RunKind = "CSV" | "N_TIMES" | "LIFECYCLE" | "BATCH_DISBURSEMENT" | string;
 
 export type BatchRunResponse = {
   id: string;
@@ -507,6 +532,9 @@ export type BatchRunResponse = {
   status: BatchRunStatus;
   createdAt: string;
   completedAt: string | null;
+  // Set for BATCH_DISBURSEMENT runs: the ledger batch_id (deep-link key) and resolved reservation_id.
+  externalBatchId?: string | null;
+  reservationId?: string | null;
 };
 
 export type BatchRowStatus = "PENDING" | "PUBLISHED" | "FAILED" | "INVALID" | string;
@@ -548,6 +576,21 @@ export type LedgerBalanceDto = {
   currency: string;
   pending: number;
   reserved: number;
+  lastEntrySequence: number;
+  balanceAsOf: string | null;
+};
+
+// One row of the ledger's batch-balance lookup. Carries a per-account status so the list views can
+// render a balance, an em dash (NOT_FOUND / FORBIDDEN), or a loading placeholder per row.
+export type BatchBalanceItem = {
+  accountId: string;
+  status: "FOUND" | "NOT_FOUND" | "FORBIDDEN" | string;
+  currency: string | null;
+  availableBalance: number | null;
+  pendingBalance: number | null;
+  reservedBalance: number | null;
+  totalBalance: number | null;
+  lastEntrySequence: number | null;
   balanceAsOf: string | null;
 };
 
@@ -602,6 +645,8 @@ export type LedgerTransactionHistoryRecord = {
   runningBalance: number | null;
   runningReservedBalance: number | null;
   runningPendingBalance: number | null;
+  // The account's total balance immediately before this line; null until the ledger emits it.
+  totalBalanceBefore: number | null;
   narrative: string | null;
   memo: string | null;
   entrySequence: number;
@@ -677,6 +722,27 @@ export type ReservationResponse = {
   expiresAt: string | null;
   createdAt: string | null;
   resolvedAt: string | null;
+};
+
+// The ledger's disbursement batch summary, read-proxied through the chaos gateway
+// (`GET /ledger/disbursement-batches/{batchId}`). `reservationId` is null until the reservation
+// lands; `status` is the ledger-derived batch status. Feeds the wizard progress panel and the
+// automatic run-results Ledger Batch panel (ADR-023).
+export type DisbursementBatchSummary = {
+  batchId: string;
+  reservationId: string | null;
+  status: string;
+  currency: string | null;
+  itemCount: number;
+  processedCount: number;
+  failedCount: number;
+  pendingCount: number;
+  totalPrincipalAmount: number | string | null;
+  totalFees: number | string | null;
+  totalAmount: number | string | null;
+  amountCaptured: number | string | null;
+  amountReleased: number | string | null;
+  createdAt: string | null;
 };
 
 // The unadjusted trial balance for a period. Mirrors the ledger's TrialBalanceResponse, read-proxied
@@ -813,6 +879,210 @@ export function getSentHistoryRecord(token: string, id: string): Promise<Publish
 }
 
 // ---------------------------------------------------------------------------
+// Ledger Kafka Events — projections (Phases 017–020)
+// ---------------------------------------------------------------------------
+
+// A projected ledger.transaction.failed event (Phase 017). `transactionRequestId` is the chaos
+// request id (correlation key); `ledgerTransactionId` is the ledger's own recording id — distinct.
+export type TransactionFailureResponse = {
+  id: string;
+  eventId: string;
+  transactionRequestId: string;
+  ledgerTransactionId: string;
+  transactionType: string;
+  failureCode: string | null;
+  failureReason: string | null;
+  ledgerCorrelationId: string | null;
+  idempotencyKey: string | null;
+  tenantId: string | null;
+  occurredAt: string;
+  receivedAt: string;
+  payloadJson: string | null;
+};
+
+// A projected ledger.balance.updated row (Phase 018) — an account's post-mutation snapshot. Field
+// names mirror LedgerBalanceDto so the UI reuses its vocabulary. Not correlatable to a publish.
+export type BalanceHistoryResponse = {
+  eventId: string;
+  accountId: string;
+  available: number;
+  pending: number;
+  reserved: number;
+  total: number;
+  totalDebits: number | null;
+  totalCredits: number | null;
+  lastEntrySequence: number;
+  balanceAsOf: string;
+  currency: string | null;
+  occurredAt: string;
+  idempotencyKey: string | null;
+};
+
+// A projected reservation lifecycle row (Phase 019) — push-fed and event-faithful, distinct from the
+// read-proxy ReservationResponse (which carries richer captured/released amounts + expiry).
+export type ReservationStateResponse = {
+  reservationId: string;
+  accountId: string;
+  transactionId: string;
+  reservationType: string;
+  disbursementBatchId: string | null;
+  amount: number;
+  currency: string | null;
+  status: string;
+  releaseEventCount: number;
+  createdAt: string | null;
+  updatedAt: string;
+  terminalAt: string | null;
+  payloadJson: string | null;
+};
+
+// A projected ledger inbound dead letter (Phase 020). Heavy fields (originalPayloadJson, rawDltJson)
+// are populated only on the by-id detail path; null in list rows.
+export type DeadLetterRecordResponse = {
+  id: string;
+  dltTopic: string;
+  originalTopic: string;
+  domain: string;
+  source: string;
+  eventType: string | null;
+  eventId: string | null;
+  transactionId: string | null;
+  transactionType: string | null;
+  failureClassification: string | null;
+  errorType: string | null;
+  errorMessage: string | null;
+  retryCount: number | null;
+  originalPartition: number | null;
+  originalOffset: number | null;
+  originalKey: string | null;
+  deadLetteredAt: string | null;
+  receivedAt: string;
+  originalPayloadJson: string | null;
+  rawDltJson: string | null;
+};
+
+export type DeadLetterFilters = {
+  page?: number;
+  size?: number;
+  domain?: string;
+  transactionId?: string;
+  transactionType?: string;
+  originalTopic?: string;
+  failureClassification?: string;
+  from?: string;
+  to?: string;
+};
+
+// --- Transaction failures (Phase 017) ---
+
+// Single-key poll for the run-page failure watch: returns the matching failure(s) for one request id.
+export function getTransactionFailureByRequestId(
+  token: string,
+  transactionRequestId: string
+): Promise<PageResponse<TransactionFailureResponse>> {
+  return request<PageResponse<TransactionFailureResponse>>("/transaction-failures", {
+    token,
+    query: { transactionRequestId }
+  });
+}
+
+// Batch lookup for the "Sent" history page: one call resolving outcomes for many request ids.
+export function listTransactionFailuresByRequestIds(
+  token: string,
+  transactionRequestIds: string[]
+): Promise<PageResponse<TransactionFailureResponse>> {
+  const ids = Array.from(new Set(transactionRequestIds.filter(Boolean)));
+  if (ids.length === 0) {
+    return Promise.resolve({ items: [], page: 0, perPage: 0, total: 0 });
+  }
+  return request<PageResponse<TransactionFailureResponse>>("/transaction-failures", {
+    token,
+    query: { transactionRequestIds: ids }
+  });
+}
+
+// --- Balance history (Phase 018) ---
+
+export function getBalanceHistory(
+  token: string,
+  vaId: string,
+  params: { from?: string; to?: string; page?: number; size?: number } = {}
+): Promise<PageResponse<BalanceHistoryResponse>> {
+  const { page = 0, size = 20, from, to } = params;
+  return request<PageResponse<BalanceHistoryResponse>>(
+    `/virtual-accounts/${encodeURIComponent(vaId)}/balance-history`,
+    { token, query: { page, size, from, to } }
+  );
+}
+
+// Flat/batch balance history across involved accounts (the run-page balance watch).
+export function listBalanceHistoryByAccounts(
+  token: string,
+  accountIds: string[],
+  params: { from?: string; to?: string; page?: number; size?: number } = {}
+): Promise<PageResponse<BalanceHistoryResponse>> {
+  const ids = Array.from(new Set(accountIds.filter(Boolean)));
+  if (ids.length === 0) {
+    return Promise.resolve({ items: [], page: 0, perPage: 0, total: 0 });
+  }
+  const { page = 0, size = 50, from, to } = params;
+  return request<PageResponse<BalanceHistoryResponse>>("/balance-history", {
+    token,
+    query: { accountId: ids, page, size, from, to }
+  });
+}
+
+// --- Reservation lifecycle projection (Phase 019). Distinct from getAccountReservations (read-proxy). ---
+
+export function getVaReservations(
+  token: string,
+  vaId: string,
+  params: { status?: string; from?: string; to?: string; page?: number; size?: number } = {}
+): Promise<PageResponse<ReservationStateResponse>> {
+  const { page = 0, size = 20, status, from, to } = params;
+  return request<PageResponse<ReservationStateResponse>>(
+    `/virtual-accounts/${encodeURIComponent(vaId)}/reservations`,
+    { token, query: { page, size, status, from, to } }
+  );
+}
+
+// Flat/batch reservation query for the wizard toast watch (by transactionRef or batchId).
+export function listReservations(
+  token: string,
+  params: {
+    transactionRef?: string;
+    batchId?: string;
+    accountId?: string[];
+    status?: string;
+    page?: number;
+    size?: number;
+  } = {}
+): Promise<PageResponse<ReservationStateResponse>> {
+  const { page = 0, size = 20, transactionRef, batchId, accountId, status } = params;
+  return request<PageResponse<ReservationStateResponse>>("/reservations", {
+    token,
+    query: { transactionRef, batchId, accountId, status, page, size }
+  });
+}
+
+// --- Dead Letter Queue (Phase 020) ---
+
+export function listDeadLetters(
+  token: string,
+  filters: DeadLetterFilters = {}
+): Promise<PageResponse<DeadLetterRecordResponse>> {
+  const { page = 0, size = 20, ...rest } = filters;
+  return request<PageResponse<DeadLetterRecordResponse>>("/dlq", {
+    token,
+    query: { page, size, ...rest }
+  });
+}
+
+export function getDeadLetter(token: string, id: string): Promise<DeadLetterRecordResponse> {
+  return request<DeadLetterRecordResponse>(`/dlq/${encodeURIComponent(id)}`, { token });
+}
+
+// ---------------------------------------------------------------------------
 // API functions — Ledger Proxy
 // ---------------------------------------------------------------------------
 
@@ -843,14 +1113,39 @@ export function getLedgerAccount(
   return request<LedgerAccountDto>(`/ledger/accounts/${encodeURIComponent(vaId)}`, { token });
 }
 
+// Fetches an account's ledger balance, optionally as of a point in time. `asOf` is a zoneless ISO
+// local date-time (e.g. "2026-06-01T12:00") interpreted in the ledger's zone — pass it verbatim, do
+// NOT call Date.toISOString() (that emits a UTC "Z" suffix and shifts the wall-clock the operator
+// picked). The ledger reconstructs the historical snapshot and rejects a future-dated `asOf`.
 export function getLedgerAccountBalances(
   token: string,
-  vaId: string
+  vaId: string,
+  asOf?: string
 ): Promise<LedgerBalanceDto> {
   return request<LedgerBalanceDto>(
     `/ledger/accounts/${encodeURIComponent(vaId)}/balance`,
-    { token }
+    { token, query: { asOf } }
   );
+}
+
+// Fetches balances for several accounts in a single call (one request per list page, not N). Ids are
+// de-duplicated and the request is chunked to stay within the ledger's batch cap (100). Returns one
+// item per id with a FOUND / NOT_FOUND / FORBIDDEN status.
+export async function getBatchBalances(
+  token: string,
+  accountIds: string[]
+): Promise<BatchBalanceItem[]> {
+  const ids = Array.from(new Set(accountIds.filter(Boolean)));
+  if (ids.length === 0) return [];
+  const CHUNK = 100;
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
+  const results = await Promise.all(
+    chunks.map(chunk =>
+      request<BatchBalanceItem[]>("/ledger/balances", { token, query: { accountId: chunk } })
+    )
+  );
+  return results.flat();
 }
 
 export function listLedgerTransactions(
@@ -914,6 +1209,19 @@ export function getAccountReservations(
   return request<ReservationResponse[]>(
     `/ledger/accounts/${encodeURIComponent(accountId)}/reservations`,
     { token, query: { transactionRef } }
+  );
+}
+
+// Fetches the ledger's disbursement batch summary by `batchId` (reservation_id + status + counters),
+// read-proxied through the chaos gateway. Backs the batch wizard's reservation_id poll + progress
+// panel and the automatic run-results Ledger Batch panel (ADR-023).
+export function getDisbursementBatch(
+  token: string,
+  batchId: string
+): Promise<DisbursementBatchSummary> {
+  return request<DisbursementBatchSummary>(
+    `/ledger/disbursement-batches/${encodeURIComponent(batchId)}`,
+    { token }
   );
 }
 
@@ -986,6 +1294,58 @@ export function runRandomLifecycle(
   );
 }
 
+// The per-item outcome policy for an automatic batch disbursement (mirrors the backend).
+export type BatchOutcomeMode = "ALL_PASS" | "ALL_FAIL" | "COUNT" | "RANDOM";
+export type BatchOutcomePolicy = {
+  mode: BatchOutcomeMode;
+  passCount?: number | null;
+  seed?: number | null;
+};
+
+// Request body for `POST /flows/disbursement-batch/run` (automatic batch disbursement).
+export type BatchDisbursementRunRequest = {
+  sourceVaId: string;
+  destinationVaId: string;
+  merchantId: string;
+  currency?: string | null;
+  totalPrincipalAmount?: number | string | null;
+  totalFees?: number | string | null;
+  itemCount: number;
+  disbursementSubtype?: string | null;
+  merchantBatchRef?: string | null;
+  callbackUrl?: string | null;
+  authorisedUserId?: string | null;
+  authorisedKeyFingerprint?: string | null;
+  tenantId?: string | null;
+  correlationId?: string | null;
+  splitMode?: string | null;
+  outcomePolicy: BatchOutcomePolicy;
+  creditProviderId?: string | null;
+  creditAccountId?: string | null;
+  providerId?: string | null;
+  sourceCountry?: string | null;
+  destinationCountry?: string | null;
+  feeVaId?: string | null;
+  failureCode?: string | null;
+  failureReason?: string | null;
+  pacing?: NTimesOptions | null;
+  chaos?: ChaosOptions | null;
+};
+
+// Runs a whole batch disbursement unattended on the backend (one reservation + N items split by an
+// outcome policy), returning a `202` run handle to poll in the run-results view (carrying the ledger
+// batch_id for the summary panel).
+export function runDisbursementBatch(
+  token: string,
+  body: BatchDisbursementRunRequest
+): Promise<BatchRunResponse> {
+  return request<BatchRunResponse>("/flows/disbursement-batch/run", {
+    token,
+    method: "POST",
+    body
+  });
+}
+
 // ---------------------------------------------------------------------------
 // API functions — Batches
 // ---------------------------------------------------------------------------
@@ -1030,7 +1390,12 @@ export function listBatchRows(
 // ---------------------------------------------------------------------------
 
 export function isBatchTerminal(status: BatchRunStatus): boolean {
-  return status === "COMPLETED" || status === "FAILED" || status === "CANCELLED";
+  return (
+    status === "COMPLETED" ||
+    status === "COMPLETED_WITH_FAILURES" ||
+    status === "FAILED" ||
+    status === "CANCELLED"
+  );
 }
 
 // ---------------------------------------------------------------------------

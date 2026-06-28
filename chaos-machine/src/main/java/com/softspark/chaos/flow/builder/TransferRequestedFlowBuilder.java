@@ -32,6 +32,11 @@ public class TransferRequestedFlowBuilder implements FlowBuilder<TransferRequest
   }
 
   @Override
+  public java.util.Optional<String> transactionRequestIdField() {
+    return java.util.Optional.of("transfer_request_id");
+  }
+
+  @Override
   public String source() {
     return "transfer-service";
   }

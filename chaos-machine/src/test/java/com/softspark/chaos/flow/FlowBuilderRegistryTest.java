@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 class FlowBuilderRegistryTest {
 
   @Test
-  @DisplayName("all 14 FlowType values have a registered builder")
+  @DisplayName("all 18 FlowType values have a registered builder")
   @SuppressWarnings({"unchecked", "rawtypes"})
   void allFlowTypesHaveBuilder() {
     List<FlowBuilder<?>> builders = new ArrayList<>();
@@ -29,11 +29,11 @@ class FlowBuilderRegistryTest {
 
     var registry = new FlowBuilderRegistry(builders);
 
-    assertThat(FlowType.values()).hasSize(14);
+    assertThat(FlowType.values()).hasSize(18);
     for (FlowType type : FlowType.values()) {
       assertThat(registry.get(type)).isNotNull();
     }
-    assertThat(registry.all()).hasSize(14);
+    assertThat(registry.all()).hasSize(18);
   }
 
   @Test

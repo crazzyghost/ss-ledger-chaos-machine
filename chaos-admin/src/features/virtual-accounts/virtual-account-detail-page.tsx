@@ -2,9 +2,12 @@ import { Page, PageContent, PageHeader } from "@/components/layout/page";
 import { InlineNotice, StatePanel } from "@/components/layout/state-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import { TransactionsTab } from "@/features/transactions/transactions-page";
+import { BalanceHistoryTab } from "@/features/virtual-accounts/balance-history-tab";
+import { ReservationsTab } from "@/features/virtual-accounts/reservations-tab";
 import { getLedgerAccount, getLedgerAccountBalances, getVirtualAccount } from "@/lib/api";
 import {
   formatDate,
@@ -16,6 +19,7 @@ import {
 import { usePersistedTabs } from "@/lib/use-persisted-tabs";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 function getErrorMessage(err: unknown): string {
@@ -80,55 +84,107 @@ function DetailCard({
   );
 }
 
+// Formats a Date as the value a <input type="datetime-local"> expects ("YYYY-MM-DDTHH:mm"), i.e. a
+// zoneless local wall-clock — the exact shape the ledger's `asOf` LocalDateTime binds.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+    d.getMinutes()
+  )}`;
+}
+
+function BalanceBucket({
+  label,
+  value,
+  currency
+}: {
+  label: string;
+  value: number | null | undefined;
+  currency: string;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold tabular-nums">{formatMoney(value, currency)}</p>
+    </div>
+  );
+}
+
 function BalancePanel({ token, vaId }: { token: string; vaId: string }) {
+  // `asOf` null → current balance (shares the page-header's ["ledger-balance", vaId] cache entry, so
+  // no double fetch); set → point-in-time view keyed separately, leaving the header on current.
+  const [asOf, setAsOf] = useState<string | null>(null);
   const query = useQuery({
-    queryKey: ["ledger-balance", vaId],
-    queryFn: () => getLedgerAccountBalances(token, vaId),
+    queryKey: asOf ? ["ledger-balance", vaId, asOf] : ["ledger-balance", vaId],
+    queryFn: () => getLedgerAccountBalances(token, vaId, asOf ?? undefined),
     retry: false
   });
 
+  let body: ReactNode;
   if (query.isLoading) {
-    return <div className="h-20 animate-pulse rounded-lg border border-border bg-muted/40" />;
-  }
-
-  if (query.error) {
-    return (
+    body = <div className="h-16 animate-pulse rounded-lg bg-muted/40" />;
+  } else if (query.error) {
+    body = (
       <InlineNotice
         title="Ledger balance unavailable"
         description={
-          isLedgerProxyUnavailable(query.error)
-            ? "Ledger service is currently degraded. Registry data still shown above."
-            : getErrorMessage(query.error)
+          asOf
+            ? "Couldn’t load the balance as of the selected time — it may be in the future or before this account existed."
+            : isLedgerProxyUnavailable(query.error)
+              ? "Ledger service is currently degraded. Registry data still shown above."
+              : getErrorMessage(query.error)
         }
         tone="warning"
       />
     );
+  } else if (query.data) {
+    const b = query.data;
+    body = (
+      <>
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <BalanceBucket label="Total" value={b.total} currency={b.currency} />
+          <BalanceBucket label="Available" value={b.available} currency={b.currency} />
+          <BalanceBucket label="Reserved" value={b.reserved} currency={b.currency} />
+          <BalanceBucket label="Pending" value={b.pending} currency={b.currency} />
+        </div>
+        {b.balanceAsOf && (
+          <p className="mt-3 text-[10px] text-muted-foreground">
+            Balance as of {formatDate(b.balanceAsOf)}
+          </p>
+        )}
+      </>
+    );
+  } else {
+    body = null;
   }
-
-  const b = query.data;
-  if (!b) return null;
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <p className="mb-3 text-xs font-semibold">Ledger Balance</p>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Balance</p>
-          <p className="mt-0.5 text-sm font-semibold tabular-nums">
-            {formatMoney(b.total, b.currency)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Available</p>
-          <p className="mt-0.5 text-sm font-semibold tabular-nums">
-            {formatMoney(b.available, b.currency)}
-          </p>
-        </div>
-        <div>
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Currency</p>
-          <p className="mt-0.5 text-sm font-semibold">{b.currency}</p>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold">Ledger Balance</p>
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="balance-as-of"
+            className="text-[10px] uppercase tracking-wide text-muted-foreground"
+          >
+            Balance As Of
+          </label>
+          <Input
+            id="balance-as-of"
+            type="datetime-local"
+            className="h-8 w-auto text-xs"
+            value={asOf ?? ""}
+            max={toLocalInputValue(new Date())}
+            onChange={e => setAsOf(e.target.value ? e.target.value : null)}
+          />
+          {asOf && (
+            <Button variant="ghost" size="sm" className="h-8" onClick={() => setAsOf(null)}>
+              Now
+            </Button>
+          )}
         </div>
       </div>
+      {body}
     </div>
   );
 }
@@ -208,6 +264,9 @@ function OverviewTab({ vaId }: { vaId: string }) {
         )}
       </div>
 
+      {/* Ledger balance — surfaced above the registry details so funds are the first thing seen */}
+      <BalancePanel token={token!} vaId={vaId} />
+
       {/* Chaos registry details */}
       {hasChaos && va && (
         <DetailCard
@@ -251,9 +310,6 @@ function OverviewTab({ vaId }: { vaId: string }) {
           ]}
         />
       )}
-
-      {/* Ledger balance */}
-      <BalancePanel token={token!} vaId={vaId} />
     </div>
   );
 }
@@ -284,12 +340,29 @@ export function VirtualAccountDetailPage() {
 
   const va = chaosQuery.data;
   const ledger = ledgerQuery.data;
+
+  // Current available balance for the sub-header so it stays visible across every tab. Shares the
+  // ["ledger-balance", vaId] cache entry with the Overview tab's panel; gated on the account being
+  // present in the ledger to avoid a guaranteed 404 for ledger-less projections.
+  const balanceQuery = useQuery({
+    queryKey: ["ledger-balance", vaId],
+    queryFn: () => getLedgerAccountBalances(token!, vaId!),
+    enabled: Boolean(vaId) && Boolean(ledger),
+    retry: false
+  });
+
   const title = va?.name ?? ledger?.accountName ?? vaId ?? "Virtual Account";
   const ownership = va?.ownershipType ?? ledger?.accountOwnershipType ?? null;
   const currency = va?.currency ?? ledger?.currency ?? null;
+  const available =
+    balanceQuery.data != null
+      ? formatMoney(balanceQuery.data.available, balanceQuery.data.currency)
+      : null;
   const description =
     ownership || currency
-      ? [ownership ? formatEnumValue(ownership) : null, currency].filter(Boolean).join(" · ")
+      ? [ownership ? formatEnumValue(ownership) : null, currency, available]
+          .filter(Boolean)
+          .join(" · ")
       : "Loading…";
 
   return (
@@ -314,12 +387,20 @@ export function VirtualAccountDetailPage() {
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="transactions">Transactions</TabsTrigger>
+            <TabsTrigger value="balance">Balance</TabsTrigger>
+            <TabsTrigger value="reservations">Reservations</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="flex-1 overflow-y-auto p-6 md:p-8">
             {vaId ? <OverviewTab vaId={vaId} /> : null}
           </TabsContent>
           <TabsContent value="transactions" className="flex min-h-0 flex-1 flex-col">
             {vaId ? <TransactionsTab lockedVaId={vaId} /> : null}
+          </TabsContent>
+          <TabsContent value="balance" className="flex-1 overflow-y-auto p-6 md:p-8">
+            {vaId ? <BalanceHistoryTab vaId={vaId} currency={currency ?? undefined} /> : null}
+          </TabsContent>
+          <TabsContent value="reservations" className="flex-1 overflow-y-auto p-6 md:p-8">
+            {vaId ? <ReservationsTab vaId={vaId} currency={currency ?? undefined} /> : null}
           </TabsContent>
         </Tabs>
       </PageContent>

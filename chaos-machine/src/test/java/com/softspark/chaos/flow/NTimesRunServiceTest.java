@@ -39,7 +39,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("NTimesRunService")
 class NTimesRunServiceTest {
 
-  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L);
+  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L, 100);
 
   @Mock private BatchRunRepository batchRunRepository;
   @Mock private BatchRowRepository batchRowRepository;

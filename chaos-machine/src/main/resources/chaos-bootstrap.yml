@@ -57,6 +57,18 @@ chaos:
       - flowType: DISBURSEMENT_COMPLETED
         slotName: destination
         accountRole: SETTLEMENT_ACCOUNT
+      # Batch disbursement: source organization VA debited (no role; request-supplied), platform-float
+      # SYSTEM VA credited as items complete. Item fee VAs travel per-row inside the FEE_LIST.
+      - flowType: DISBURSEMENT_BATCH_RESERVATION_REQUEST
+        slotName: source
+      - flowType: DISBURSEMENT_BATCH_RESERVATION_REQUEST
+        slotName: destination
+        accountRole: PLATFORM_FLOAT
+      - flowType: DISBURSEMENT_BATCH_ITEM_COMPLETED
+        slotName: source
+      - flowType: DISBURSEMENT_BATCH_ITEM_COMPLETED
+        slotName: destination
+        accountRole: PLATFORM_FLOAT
       # Settlement-completed source is the operator-picked organization VA (no role; request-supplied).
       - flowType: SETTLEMENT_COMPLETED
         slotName: source

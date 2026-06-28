@@ -48,6 +48,16 @@ const BatchRunPage = lazy(() =>
 const BatchesPage = lazy(() =>
   import("@/features/chaos/batches-page").then(m => ({ default: m.BatchesPage }))
 );
+const DeadLetterQueuePage = lazy(() =>
+  import("@/features/dlq/dead-letter-queue-page").then(m => ({
+    default: m.DeadLetterQueuePage
+  }))
+);
+const DeadLetterQueueDetailPage = lazy(() =>
+  import("@/features/dlq/dead-letter-queue-detail-page").then(m => ({
+    default: m.DeadLetterQueueDetailPage
+  }))
+);
 const CountriesPage = lazy(() =>
   import("@/features/countries/countries-page").then(m => ({ default: m.CountriesPage }))
 );
@@ -122,6 +132,14 @@ export const router = createBrowserRouter([
           {
             path: "/chaos/batches/:batchId",
             element: withSuspense(<BatchRunPage />)
+          },
+          {
+            path: "/chaos/dlq",
+            element: withSuspense(<DeadLetterQueuePage />)
+          },
+          {
+            path: "/chaos/dlq/:id",
+            element: withSuspense(<DeadLetterQueueDetailPage />)
           },
           // Accounts
           {

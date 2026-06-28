@@ -8,6 +8,7 @@ import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui
 import { useSession } from "@/features/auth/session-provider";
 import {
   getBatch,
+  getDisbursementBatch,
   isBatchTerminal,
   listBatchRows,
   type BatchRowResponse,
@@ -146,6 +147,65 @@ function BatchRowsTable({
 }
 
 // ---------------------------------------------------------------------------
+// Ledger batch summary (BATCH_DISBURSEMENT runs)
+// ---------------------------------------------------------------------------
+
+function LedgerBatchSummary({
+  token,
+  externalBatchId,
+  poll
+}: {
+  token: string;
+  externalBatchId: string;
+  poll: boolean;
+}) {
+  const query = useQuery({
+    queryKey: ["disbursement-batch", externalBatchId],
+    queryFn: () => getDisbursementBatch(token, externalBatchId),
+    refetchInterval: poll ? POLL_INTERVAL_MS : false
+  });
+  const summary = query.data;
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle>Ledger Batch</CardTitle>
+        <Badge variant={summary ? getStatusBadgeVariant(summary.status) : "neutral"}>
+          {summary ? formatEnumValue(summary.status) : query.isLoading ? "Loading…" : "—"}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        {query.error ? (
+          <p className="text-xs text-muted-foreground">
+            Ledger batch summary unavailable (the ledger may not expose this batch yet).
+          </p>
+        ) : (
+          <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {[
+              { label: "Item count", value: summary ? String(summary.itemCount) : "—" },
+              { label: "Processed", value: summary ? String(summary.processedCount) : "—" },
+              { label: "Failed", value: summary ? String(summary.failedCount) : "—" },
+              { label: "Pending", value: summary ? String(summary.pendingCount) : "—" },
+              { label: "Total amount", value: summary?.totalAmount != null ? String(summary.totalAmount) : "—" },
+              { label: "Captured", value: summary?.amountCaptured != null ? String(summary.amountCaptured) : "—" },
+              { label: "Released", value: summary?.amountReleased != null ? String(summary.amountReleased) : "—" },
+              { label: "Reservation ID", value: summary?.reservationId ?? "—", mono: true }
+            ].map(f => (
+              <div key={f.label}>
+                <dt className="text-[10px] uppercase tracking-wide text-muted-foreground">{f.label}</dt>
+                <dd className={`mt-0.5 break-all text-xs ${f.mono ? "font-mono text-muted-foreground" : ""}`}>
+                  {f.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Batch Run Page
 // ---------------------------------------------------------------------------
 
@@ -197,8 +257,15 @@ export function BatchRunPage() {
   const isTerminal = isBatchTerminal(batch.status);
   const isNTimes = batch.kind === "N_TIMES";
   const isLifecycle = batch.kind === "LIFECYCLE";
-  const isPaced = isNTimes || isLifecycle;
-  const runTitle = isLifecycle ? "Lifecycle Run" : isNTimes ? "N Times Run" : "Batch";
+  const isBatchDisbursement = batch.kind === "BATCH_DISBURSEMENT";
+  const isPaced = isNTimes || isLifecycle || isBatchDisbursement;
+  const runTitle = isBatchDisbursement
+    ? "Batch Disbursement Run"
+    : isLifecycle
+      ? "Lifecycle Run"
+      : isNTimes
+        ? "N Times Run"
+        : "Batch";
   const kindLabel = isPaced
     ? [batch.kind, batch.pacing, batch.mode]
         .filter(Boolean)
@@ -249,6 +316,15 @@ export function BatchRunPage() {
           <StatCard label="Failed" value={batch.failed} variant="destructive" />
           <StatCard label="Invalid" value={batch.invalid} variant="warning" />
         </div>
+
+        {/* Ledger batch summary (BATCH_DISBURSEMENT runs) */}
+        {isBatchDisbursement && batch.externalBatchId && token && (
+          <LedgerBatchSummary
+            token={token}
+            externalBatchId={batch.externalBatchId}
+            poll={!isTerminal}
+          />
+        )}
 
         {/* Row detail */}
         <Card>

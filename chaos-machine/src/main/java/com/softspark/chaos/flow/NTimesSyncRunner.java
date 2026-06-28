@@ -56,6 +56,7 @@ public class NTimesSyncRunner {
     int count = options.count();
     List<String> eventIds = new ArrayList<>(count);
     List<String> historyIds = new ArrayList<>(count);
+    List<String> transactionRequestIds = new ArrayList<>(count);
     int succeeded = 0;
     int failed = 0;
 
@@ -67,6 +68,7 @@ public class NTimesSyncRunner {
       FlowResult result = flowEngine.execute(requests.get(i), label);
       eventIds.add(result.eventId());
       historyIds.add(result.historyId());
+      transactionRequestIds.add(result.transactionRequestId());
       if ("PUBLISHED".equals(result.status())) {
         succeeded++;
       } else {
@@ -75,7 +77,14 @@ public class NTimesSyncRunner {
     }
 
     return new NTimesSyncResult(
-        base.flowType(), count, succeeded, failed, correlationId, eventIds, historyIds);
+        base.flowType(),
+        count,
+        succeeded,
+        failed,
+        correlationId,
+        eventIds,
+        historyIds,
+        transactionRequestIds);
   }
 
   /**

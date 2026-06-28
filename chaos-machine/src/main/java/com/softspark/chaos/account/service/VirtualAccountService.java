@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -178,7 +179,11 @@ public class VirtualAccountService {
     int pageNum = page != null && page >= 0 ? page : 0;
     int pageSize =
         perPage != null && perPage > 0 ? Math.min(perPage, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
-    Pageable pageable = PageRequest.of(pageNum, pageSize);
+    // Newest-first, with the @Id as a stable tie-break so paging never drifts under concurrent
+    // inserts (chaos VA creation during a poll window). Matches the ledger list's createdAt/DESC
+    // default so both list views share one order (Phase 015 / idea 008_balance_display).
+    Sort sort = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("vaId"));
+    Pageable pageable = PageRequest.of(pageNum, pageSize, sort);
 
     Page<VirtualAccount> vaPage;
 

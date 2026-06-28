@@ -31,6 +31,11 @@ public class SettlementInitiatedFlowBuilder implements FlowBuilder<SettlementIni
   }
 
   @Override
+  public java.util.Optional<String> transactionRequestIdField() {
+    return java.util.Optional.of("settlement_request_id");
+  }
+
+  @Override
   public String source() {
     return "settlements-service";
   }

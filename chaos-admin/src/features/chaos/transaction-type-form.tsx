@@ -394,6 +394,19 @@ export function TransactionTypeForm({
       return <Select value={value} onChange={v => setField(d.name, v)} options={options} />;
     }
 
+    if (d.kind === "INTEGER") {
+      return (
+        <Input
+          type="number"
+          step="1"
+          min="1"
+          value={value}
+          onChange={e => setField(d.name, e.target.value)}
+          className="text-xs"
+        />
+      );
+    }
+
     if (d.kind === "UUID" || d.autogen !== "NONE") {
       return (
         <div className="flex gap-1.5">

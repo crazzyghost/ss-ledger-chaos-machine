@@ -26,6 +26,8 @@ import java.util.List;
  * @param runningBalance available-balance snapshot immediately after this line was posted
  * @param runningReservedBalance reserved-balance witness at post time
  * @param runningPendingBalance pending-balance witness at post time
+ * @param totalBalanceBefore the account's total balance immediately before this line was posted;
+ *     {@code null} until the ledger emits it (the proxy passes it through verbatim when present)
  * @param narrative human-readable description from the parent entry
  * @param memo optional free-text annotation on this line
  * @param entrySequence globally-ordered sequence number from the parent entry
@@ -48,6 +50,7 @@ public record LedgerTransactionHistoryDto(
     @Nullable BigDecimal runningBalance,
     @Nullable BigDecimal runningReservedBalance,
     @Nullable BigDecimal runningPendingBalance,
+    @Nullable BigDecimal totalBalanceBefore,
     @Nullable String narrative,
     @Nullable String memo,
     long entrySequence,

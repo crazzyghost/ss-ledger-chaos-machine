@@ -39,7 +39,7 @@ class ChaosPlanTest {
     mapper.registerModule(new JavaTimeModule());
     mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-    ChaosLimits limits = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L);
+    ChaosLimits limits = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L, 100);
     chaosPlan = new ChaosPlan(limits, mapper);
 
     var meta = new EventMetadata("corr-1", "idem-key:EVT-001", "tenant-1");

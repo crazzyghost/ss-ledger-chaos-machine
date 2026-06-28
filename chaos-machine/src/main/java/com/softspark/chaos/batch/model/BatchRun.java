@@ -48,6 +48,16 @@ public class BatchRun {
   @Nullable
   private String mode;
 
+  /** The ledger {@code batch_id} for a BATCH_DISBURSEMENT run; null otherwise (deep-link key). */
+  @Column(name = "external_batch_id")
+  @Nullable
+  private String externalBatchId;
+
+  /** The ledger-resolved {@code reservation_id} for a BATCH_DISBURSEMENT run; null otherwise. */
+  @Column(name = "reservation_id")
+  @Nullable
+  private String reservationId;
+
   @Column(name = "total")
   private int total;
 
@@ -121,6 +131,24 @@ public class BatchRun {
 
   public void setMode(@Nullable String mode) {
     this.mode = mode;
+  }
+
+  @Nullable
+  public String getExternalBatchId() {
+    return externalBatchId;
+  }
+
+  public void setExternalBatchId(@Nullable String externalBatchId) {
+    this.externalBatchId = externalBatchId;
+  }
+
+  @Nullable
+  public String getReservationId() {
+    return reservationId;
+  }
+
+  public void setReservationId(@Nullable String reservationId) {
+    this.reservationId = reservationId;
   }
 
   public int getTotal() {

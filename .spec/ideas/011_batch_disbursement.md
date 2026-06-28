@@ -1,0 +1,9 @@
+- support batch disbursements on single run
+  - different from csv upload flow
+- first form creates batch reservation
+  - accepts source and destination
+  - accepts number N of items
+- operator cycles through N "disbursement" form deciding which passes or fails
+- automatic flows
+  - split amount and fees by N
+  - operator can select how many pass or fail or whether all should pass or fail
