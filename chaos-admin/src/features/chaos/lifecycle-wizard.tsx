@@ -36,6 +36,7 @@ import {
 import { OutcomeSelector, type Outcome } from "./outcome-selector";
 import { TransactionTypeForm, type AssembledFlow } from "./transaction-type-form";
 import { useReservationWatch } from "./use-reservation-watch";
+import { useTransactionFailureWatch } from "./use-transaction-failure-watch";
 
 const EMPTY_ASSEMBLED: AssembledFlow = {
   slotOverrides: {},
@@ -115,6 +116,9 @@ export function LifecycleWizard({
   const [confirm, setConfirm] = useState<null | "step1" | "step2" | "random">(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FlowResult | null>(null);
+  // Request id(s) of the events published by this wizard, fed to the run-page failure watch so a
+  // ledger rejection (e.g. an insufficient-funds settlement.initiated) raises a danger toast.
+  const [failureWatchIds, setFailureWatchIds] = useState<string[]>([]);
   const [timedOut, setTimedOut] = useState(false);
 
   // "full" runs the two-step initiate→confirm wizard; "completion" skips initiation and publishes the
@@ -138,6 +142,7 @@ export function LifecycleWizard({
     setTimedOut(false);
     setResolvedReservation(null);
     setLookupMiss(false);
+    setFailureWatchIds([]);
   }, [outcome]);
 
   // Reset the transient state when switching between full and completion-only.
@@ -148,6 +153,7 @@ export function LifecycleWizard({
     setError(null);
     setResolvedReservation(null);
     setLookupMiss(false);
+    setFailureWatchIds([]);
   }, [mode]);
 
   const orgVaId = step1Values?.["virtual_account_id"] ?? "";
@@ -162,6 +168,7 @@ export function LifecycleWizard({
     return step1Values[field] || null;
   }, [step1Values, isDisbursement]);
   useReservationWatch(reservationWatchRef);
+  useTransactionFailureWatch(failureWatchIds);
 
   const reservationQuery = useQuery({
     queryKey: ["reservation", orgVaId, transactionId],
@@ -213,6 +220,7 @@ export function LifecycleWizard({
       }
       setError(null);
       setStep1Values(capture(step1Assembled));
+      if (r.transactionRequestId) setFailureWatchIds([r.transactionRequestId]);
       setStep2Chaos(INITIAL_CHAOS);
       setTimedOut(false);
       setStep(2);
@@ -226,6 +234,8 @@ export function LifecycleWizard({
     onSuccess: r => {
       setError(null);
       setResult(r);
+      const reqId = r.transactionRequestId;
+      if (reqId) setFailureWatchIds(prev => (prev.includes(reqId) ? prev : [...prev, reqId]));
     },
     onError: err => setError(getErrorMessage(err))
   });
@@ -392,6 +402,7 @@ export function LifecycleWizard({
                 setResult(null);
                 setStep(1);
                 setStep1Values(null);
+                setFailureWatchIds([]);
               }}
             >
               Run another

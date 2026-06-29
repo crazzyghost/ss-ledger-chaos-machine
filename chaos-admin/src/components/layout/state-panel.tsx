@@ -81,8 +81,8 @@ export function InlineNotice({ title, description, tone = "default", className }
         className
       )}
     >
-      {title ? <p className="font-medium text-foreground">{title}</p> : null}
-      <p>{description}</p>
+      {title ? <p className="font-medium text-foreground break-words">{title}</p> : null}
+      <p className="break-words">{description}</p>
     </div>
   );
 }

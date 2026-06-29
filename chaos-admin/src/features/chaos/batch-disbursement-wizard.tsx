@@ -29,6 +29,7 @@ import {
 } from "./chaos-options-panel";
 import { TransactionTypeForm, type AssembledFlow } from "./transaction-type-form";
 import { useReservationWatch } from "./use-reservation-watch";
+import { useTransactionFailureWatch } from "./use-transaction-failure-watch";
 
 const EMPTY_ASSEMBLED: AssembledFlow = {
   slotOverrides: {},
@@ -151,6 +152,9 @@ export function BatchDisbursementWizard({
   const [failureCode, setFailureCode] = useState("RECIPIENT_INVALID");
   const [publishedItems, setPublishedItems] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Request ids published by this wizard (batch_id + each item_id), fed to the run-page failure watch
+  // so a ledger rejection of the reservation or an item raises a danger toast.
+  const [failureWatchIds, setFailureWatchIds] = useState<string[]>([]);
 
   const totalPrincipal = resvAssembled.flowFields["total_principal_amount"] ?? "";
   const totalFees = resvAssembled.flowFields["total_fees"] ?? "";
@@ -190,6 +194,7 @@ export function BatchDisbursementWizard({
   // toast on the aggregate reservation's create + resolution. Independent of the read-proxy summary
   // poll above; deduped/capped so the fan-out doesn't spam.
   useReservationWatch(batchId || null, { kind: "batchId" });
+  useTransactionFailureWatch(failureWatchIds);
 
   // Bound the reservation poll with a timeout once we enter the item phase.
   useEffect(() => {
@@ -225,6 +230,7 @@ export function BatchDisbursementWizard({
       const captured = captureByName(catalog, resvAssembled);
       setResvValues(captured);
       setBatchId(captured["batch_id"] ?? "");
+      if (r.transactionRequestId) setFailureWatchIds([r.transactionRequestId]);
       setTimedOut(false);
       setItemIndex(0);
       setPublishedItems(0);
@@ -278,8 +284,10 @@ export function BatchDisbursementWizard({
       };
       return runFlow(token, terminalType, terminalReq);
     },
-    onSuccess: () => {
+    onSuccess: r => {
       setError(null);
+      const reqId = r.transactionRequestId;
+      if (reqId) setFailureWatchIds(prev => (prev.includes(reqId) ? prev : [...prev, reqId]));
       setPublishedItems(c => c + 1);
       summaryQuery.refetch();
       if (itemIndex + 1 >= itemCount) {
@@ -383,6 +391,7 @@ export function BatchDisbursementWizard({
               setManualReservation("");
               setPublishedItems(0);
               setItemIndex(0);
+              setFailureWatchIds([]);
             }}
           >
             Run another batch

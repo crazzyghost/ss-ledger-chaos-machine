@@ -1,0 +1,16 @@
+- under the operate side nav
+  - Rename Single Flow Run -> Scenario Runner
+  - Drop Batches
+  - Drop Dead Letter Queue
+- Under scenario Runner
+  - Make The page tabbed
+  - Tab 1 -> Run Scenario
+    - This is the current Single Flow Run Page
+  - Tab 2 -> Run History
+    - This is the Current Transactions -> Sent (Chaos History) Tab
+    - On this page, introduce a dropdown/accordion like widget that groups all events for a run under row
+      - Expanding the row shows all related events or runs
+  - Tab 3 -> DLQ
+    - This is the current Dead Letter Queue page
+- On the current Ledger -> Transactions page
+  - The ledger tab should be the main content (it is currently broken)
