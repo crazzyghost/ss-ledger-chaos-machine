@@ -51,8 +51,8 @@ export function RouteErrorBoundary() {
           icon="error"
           action={<Button onClick={() => window.location.reload()}>Reload page</Button>}
           secondaryAction={
-            <Button variant="outline" onClick={() => navigate("/chaos/single-flow")}>
-              Go to Single Flow
+            <Button variant="outline" onClick={() => navigate("/chaos/scenario-runner")}>
+              Go to Scenario Runner
             </Button>
           }
         />

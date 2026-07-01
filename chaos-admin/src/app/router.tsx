@@ -3,8 +3,10 @@ import { LoadingCard } from "@/components/layout/state-panel";
 import { AppShell } from "@/components/layout/app-shell";
 import { LoginPage } from "@/features/auth/login-page";
 import { ProtectedRoute } from "@/features/auth/protected-route";
+import { ScenarioRunnerLayout } from "@/features/chaos/scenario-runner-layout";
+import { dlqDetailPath, runDetailPath } from "@/lib/routes";
 import { Suspense, lazy, type ReactNode } from "react";
-import { Navigate, createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter, useParams } from "react-router-dom";
 
 const ChartOfAccountsPage = lazy(() =>
   import("@/features/chart-of-accounts/chart-of-accounts-page").then(m => ({
@@ -39,14 +41,11 @@ const TrialBalancePage = lazy(() =>
 const SingleFlowPage = lazy(() =>
   import("@/features/chaos/single-flow-page").then(m => ({ default: m.SingleFlowPage }))
 );
-const BatchUploadPage = lazy(() =>
-  import("@/features/chaos/batch-upload-page").then(m => ({ default: m.BatchUploadPage }))
+const RunHistoryTab = lazy(() =>
+  import("@/features/chaos/run-history-tab").then(m => ({ default: m.RunHistoryTab }))
 );
 const BatchRunPage = lazy(() =>
   import("@/features/chaos/batch-run-page").then(m => ({ default: m.BatchRunPage }))
-);
-const BatchesPage = lazy(() =>
-  import("@/features/chaos/batches-page").then(m => ({ default: m.BatchesPage }))
 );
 const DeadLetterQueuePage = lazy(() =>
   import("@/features/dlq/dead-letter-queue-page").then(m => ({
@@ -79,6 +78,18 @@ const OrganizationsPage = lazy(() =>
     default: m.OrganizationsPage
   }))
 );
+
+// Param-preserving redirects for legacy detail URLs (declarative <Navigate> can't interpolate a
+// route param, so these read it and forward).
+function RedirectBatchToRun() {
+  const { batchId } = useParams<{ batchId: string }>();
+  return <Navigate to={runDetailPath(batchId ?? "")} replace />;
+}
+
+function RedirectDlqDetail() {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={dlqDetailPath(id ?? "")} replace />;
+}
 
 function withSuspense(node: ReactNode) {
   return (
@@ -114,32 +125,45 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/chaos/single-flow" replace />
+            element: <Navigate to="/chaos/scenario-runner" replace />
           },
-          // Chaos runner
+          // Scenario Runner — one tabbed console (Run Scenario / Run History / DLQ) with
+          // deep-linkable nested routes (ADR-030).
+          {
+            path: "/chaos/scenario-runner",
+            element: <ScenarioRunnerLayout />,
+            children: [
+              { index: true, element: withSuspense(<SingleFlowPage />) },
+              { path: "history", element: withSuspense(<RunHistoryTab />) },
+              { path: "runs/:runId", element: withSuspense(<BatchRunPage />) },
+              { path: "dlq", element: withSuspense(<DeadLetterQueuePage />) },
+              { path: "dlq/:id", element: withSuspense(<DeadLetterQueueDetailPage />) }
+            ]
+          },
+          // Legacy Operate URLs → their new homes (keep old bookmarks working).
           {
             path: "/chaos/single-flow",
-            element: withSuspense(<SingleFlowPage />)
-          },
-          {
-            path: "/chaos/upload",
-            element: withSuspense(<BatchUploadPage />)
+            element: <Navigate to="/chaos/scenario-runner" replace />
           },
           {
             path: "/chaos/batches",
-            element: withSuspense(<BatchesPage />)
+            element: <Navigate to="/chaos/scenario-runner/history" replace />
           },
           {
             path: "/chaos/batches/:batchId",
-            element: withSuspense(<BatchRunPage />)
+            element: <RedirectBatchToRun />
+          },
+          {
+            path: "/chaos/upload",
+            element: <Navigate to="/chaos/scenario-runner/history" replace />
           },
           {
             path: "/chaos/dlq",
-            element: withSuspense(<DeadLetterQueuePage />)
+            element: <Navigate to="/chaos/scenario-runner/dlq" replace />
           },
           {
             path: "/chaos/dlq/:id",
-            element: withSuspense(<DeadLetterQueueDetailPage />)
+            element: <RedirectDlqDetail />
           },
           // Accounts
           {

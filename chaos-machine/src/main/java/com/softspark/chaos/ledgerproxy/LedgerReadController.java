@@ -10,9 +10,9 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
-import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.ReconciliationEntryDto;
 import com.softspark.chaos.ledgerproxy.dto.ReservationResponse;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import io.swagger.v3.oas.annotations.Operation;
@@ -240,34 +240,50 @@ public class LedgerReadController {
   }
 
   /**
-   * Lists transactions from the ledger with optional filters.
+   * Browses the ledger's reconciliation journal-entries export for a period (read-through to the
+   * ledger).
    *
-   * @param vaId optional virtual account id filter (matches source or destination)
-   * @param eventType optional event type filter
-   * @param correlationId optional correlation id filter
-   * @param from optional ISO-8601 start of time range
-   * @param to optional ISO-8601 end of time range
+   * <p>Read-proxies the ledger's authoritative {@code GET /api/v0/reporting/reconciliation-export}
+   * export (ADR-032) — a real, cross-account, time-windowed browse of journal-entry lines (each carrying its
+   * sibling legs). It replaces the removed phantom {@code GET /api/v0/ledger/transactions} global
+   * list, which proxied a ledger endpoint that never existed. The period bounds bind directly to
+   * {@link Instant} via Spring's default ISO-8601 conversion; {@code from}/{@code to} are required and
+   * the window span is capped by the ledger (default ~7 days). Period validity is enforced by the
+   * ledger — its {@code 400} surfaces as the standard chaos 4xx error rather than being re-validated
+   * here, mirroring the trial-balance proxy.
+   *
+   * @param from the inclusive start of the window (required, ISO-8601 instant)
+   * @param to the exclusive end of the window (required, ISO-8601 instant)
+   * @param accountId optional repeatable account-id filter
+   * @param entryType optional entry-type filter (comma-separated list accepted by the ledger)
+   * @param transactionRef optional transaction-ref filter
+   * @param sourceService optional source-service filter
    * @param page zero-based page number (default 0)
-   * @param size page size (default 20)
-   * @param request the HTTP request
-   * @return paginated list of ledger transactions
+   * @param size page size (default 20; the ledger caps it at 100)
+   * @param request the HTTP request (for token extraction)
+   * @return paginated list of reconciliation journal-entry lines
    */
-  @GetMapping("/transactions")
-  @Operation(summary = "List transactions", description = "Proxy to the ledger transaction list")
-  public ResponseEntity<PageResponse<LedgerTransactionDto>> listTransactions(
-      @RequestParam(required = false) String vaId,
-      @RequestParam(required = false) String eventType,
-      @RequestParam(required = false) String correlationId,
-      @RequestParam(required = false) String from,
-      @RequestParam(required = false) String to,
+  @GetMapping("/reporting/reconciliation-export")
+  @Operation(
+      summary = "Browse journal entries for a period",
+      description =
+          "Read-through to the ledger's reconciliation export "
+              + "(cross-account, time-windowed, span-capped)")
+  public ResponseEntity<PageResponse<ReconciliationEntryDto>> exportJournalEntries(
+      @RequestParam Instant from,
+      @RequestParam Instant to,
+      @RequestParam(name = "accountId", required = false) List<String> accountId,
+      @RequestParam(required = false) String entryType,
+      @RequestParam(required = false) String transactionRef,
+      @RequestParam(required = false) String sourceService,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size,
       HttpServletRequest request) {
     var token = extractToken(request);
     try {
       var result =
-          ledgerClient.listTransactions(
-              token, vaId, eventType, correlationId, from, to, page, size);
+          ledgerClient.exportJournalEntries(
+              token, from, to, accountId, entryType, transactionRef, sourceService, page, size);
       return ResponseEntity.ok(toPageResponse(result));
     } catch (CircuitBreakerOpenException e) {
       throw new InternalServerErrorException("Ledger service temporarily unavailable");

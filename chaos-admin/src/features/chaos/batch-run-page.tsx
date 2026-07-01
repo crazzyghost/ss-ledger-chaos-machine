@@ -6,14 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useSession } from "@/features/auth/session-provider";
-import {
-  getBatch,
-  getDisbursementBatch,
-  isBatchTerminal,
-  listBatchRows,
-  type BatchRowResponse,
-  type BatchRunResponse
-} from "@/lib/api";
+import { getBatch, getDisbursementBatch, isBatchTerminal, listBatchRows } from "@/lib/api";
+import { RUN_HISTORY_PATH } from "@/lib/routes";
 import { formatDate, formatEnumValue, getStatusBadgeVariant } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
@@ -211,13 +205,13 @@ function LedgerBatchSummary({
 
 export function BatchRunPage() {
   const navigate = useNavigate();
-  const { batchId } = useParams<{ batchId: string }>();
+  const { runId } = useParams<{ runId: string }>();
   const { token } = useSession();
 
   const query = useQuery({
-    queryKey: ["batch", batchId],
-    queryFn: () => getBatch(token!, batchId!),
-    enabled: Boolean(batchId),
+    queryKey: ["batch", runId],
+    queryFn: () => getBatch(token!, runId!),
+    enabled: Boolean(runId),
     refetchInterval: query =>
       query.state.data && isBatchTerminal(query.state.data.status)
         ? false
@@ -276,12 +270,12 @@ export function BatchRunPage() {
   return (
     <Page>
       <PageHeader
-        title={`${runTitle} — ${batch.filename ?? batchId}`}
+        title={`${runTitle} — ${batch.filename ?? runId}`}
         description={`${formatEnumValue(batch.flowType)} · ${kindLabel} · ${batch.total} rows`}
         leadingActions={
-          <Button variant="ghost" size="sm" onClick={() => navigate("/chaos/batches")}>
+          <Button variant="ghost" size="sm" onClick={() => navigate(RUN_HISTORY_PATH)}>
             <ArrowLeft className="mr-1.5 h-4 w-4" />
-            All Batches
+            Run History
           </Button>
         }
       />
@@ -332,8 +326,8 @@ export function BatchRunPage() {
             <CardTitle>Row Results</CardTitle>
           </CardHeader>
           <CardContent>
-            {batchId && token && (
-              <BatchRowsTable token={token} batchId={batchId} poll={!isTerminal} />
+            {runId && token && (
+              <BatchRowsTable token={token} batchId={runId} poll={!isTerminal} />
             )}
           </CardContent>
         </Card>

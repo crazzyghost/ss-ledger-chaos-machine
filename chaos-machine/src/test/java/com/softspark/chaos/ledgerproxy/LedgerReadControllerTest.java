@@ -19,6 +19,9 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.ReconciliationEntryDto;
+import com.softspark.chaos.ledgerproxy.dto.ReconciliationEntryDtoBuilder;
+import com.softspark.chaos.ledgerproxy.dto.ReconciliationSiblingLineDtoBuilder;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceEntryDto;
 import java.math.BigDecimal;
@@ -337,6 +340,181 @@ class LedgerReadControllerTest {
                   .accept(MediaType.APPLICATION_JSON))
           .andExpect(status().isInternalServerError())
           .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
+    }
+  }
+
+  @Nested
+  @DisplayName("GET /api/v0/ledger/reporting/reconciliation-export")
+  class ExportJournalEntries {
+
+    private static final String FROM = "2026-06-22T00:00:00Z";
+    private static final String TO = "2026-06-29T00:00:00Z";
+
+    private LedgerPageDto<ReconciliationEntryDto> samplePage() {
+      var sibling =
+          ReconciliationSiblingLineDtoBuilder.builder()
+              .lineId("line-2")
+              .accountId("acct-2")
+              .direction("CREDIT")
+              .amount(new BigDecimal("100.00"))
+              .currency("GHS")
+              .build();
+      var entry =
+          ReconciliationEntryDtoBuilder.builder()
+              .lineId("line-1")
+              .journalEntryId("je-1")
+              .postedAt("2026-06-23T10:00:00Z")
+              .accountId("acct-1")
+              .accountCode("ASSET.PLATFORM.FLOAT")
+              .direction("DEBIT")
+              .amount(new BigDecimal("100.00"))
+              .currency("GHS")
+              .transactionRef("txn-ref-1")
+              .entryType("DISBURSEMENT")
+              .sourceService("ss-disbursement-service")
+              .siblingLines(List.of(sibling))
+              .build();
+      return new LedgerPageDto<>(List.of(entry), 1, 1L, 0, 20);
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("returns 200 with the paged journal entries and forwards the window")
+    void returns200WithEntries() throws Exception {
+      when(ledgerClient.exportJournalEntries(
+              any(), any(), any(), isNull(), isNull(), isNull(), isNull(), anyInt(), anyInt()))
+          .thenReturn(samplePage());
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/reconciliation-export")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.total").value(1))
+          .andExpect(jsonPath("$.items[0].lineId").value("line-1"))
+          .andExpect(jsonPath("$.items[0].transactionRef").value("txn-ref-1"))
+          .andExpect(jsonPath("$.items[0].siblingLines[0].accountId").value("acct-2"));
+
+      var fromCaptor = ArgumentCaptor.forClass(Instant.class);
+      var toCaptor = ArgumentCaptor.forClass(Instant.class);
+      verify(ledgerClient)
+          .exportJournalEntries(
+              any(),
+              fromCaptor.capture(),
+              toCaptor.capture(),
+              isNull(),
+              isNull(),
+              isNull(),
+              isNull(),
+              anyInt(),
+              anyInt());
+      org.assertj.core.api.Assertions.assertThat(fromCaptor.getValue())
+          .isEqualTo(Instant.parse(FROM));
+      org.assertj.core.api.Assertions.assertThat(toCaptor.getValue()).isEqualTo(Instant.parse(TO));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("forwards repeatable accountId and optional filters")
+    void forwardsFilters() throws Exception {
+      when(ledgerClient.exportJournalEntries(
+              any(),
+              any(),
+              any(),
+              eq(List.of("acct-1", "acct-2")),
+              eq("DISBURSEMENT"),
+              eq("txn-ref-1"),
+              eq("ss-disbursement-service"),
+              anyInt(),
+              anyInt()))
+          .thenReturn(samplePage());
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/reconciliation-export")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .param("accountId", "acct-1", "acct-2")
+                  .param("entryType", "DISBURSEMENT")
+                  .param("transactionRef", "txn-ref-1")
+                  .param("sourceService", "ss-disbursement-service")
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isOk());
+
+      verify(ledgerClient)
+          .exportJournalEntries(
+              any(),
+              any(),
+              any(),
+              eq(List.of("acct-1", "acct-2")),
+              eq("DISBURSEMENT"),
+              eq("txn-ref-1"),
+              eq("ss-disbursement-service"),
+              anyInt(),
+              anyInt());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("missing required 'from'/'to' yields 400 before any ledger call")
+    void missingParams_returns400() throws Exception {
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/reconciliation-export")
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("relays the ledger's too-wide-window 4xx as a chaos 4xx (not 500)")
+    void ledgerPeriodError_relayedAs4xx() throws Exception {
+      when(ledgerClient.exportJournalEntries(
+              any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
+          .thenThrow(new com.softspark.chaos.exception.NotFoundException("Ledger returned: 400"));
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/reconciliation-export")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("circuit breaker open returns 500")
+    void circuitBreakerOpen_returns500() throws Exception {
+      when(ledgerClient.exportJournalEntries(
+              any(), any(), any(), any(), any(), any(), any(), anyInt(), anyInt()))
+          .thenThrow(new CircuitBreakerOpenException("OPEN"));
+
+      mockMvc
+          .perform(
+              get("/api/v0/ledger/reporting/reconciliation-export")
+                  .param("from", FROM)
+                  .param("to", TO)
+                  .accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isInternalServerError())
+          .andExpect(jsonPath("$.message").value("Ledger service temporarily unavailable"));
+    }
+  }
+
+  @Nested
+  @DisplayName("removed phantom GET /api/v0/ledger/transactions")
+  class RemovedTransactionsList {
+
+    @Test
+    @WithMockUser
+    @DisplayName("the global transactions list is gone (404)")
+    void globalTransactionsList_returns404() throws Exception {
+      mockMvc
+          .perform(get("/api/v0/ledger/transactions").accept(MediaType.APPLICATION_JSON))
+          .andExpect(status().isNotFound());
     }
   }
 }

@@ -15,6 +15,7 @@ import {
   type FlowCatalogEntry,
   type PublishFlowRequest
 } from "@/lib/api";
+import { runDetailPath } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { ulid } from "@/lib/ulid";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -57,9 +58,17 @@ const FAILURE_CODES = [
 
 type Mode = "manual" | "automatic";
 
-function toRequest(a: AssembledFlow, chaos: ChaosOptions | null): PublishFlowRequest {
+// `correlationIdOverride`, when provided, forces the published correlation_id — the manual batch
+// passes one stable id across the reservation + every item.request/terminal so Run History groups
+// the whole batch under a single run (ADR-031); otherwise each form mints a fresh id and they
+// fragment into many singleton runs.
+function toRequest(
+  a: AssembledFlow,
+  chaos: ChaosOptions | null,
+  correlationIdOverride?: string
+): PublishFlowRequest {
   return {
-    correlationId: a.correlationId.trim() || null,
+    correlationId: correlationIdOverride ?? (a.correlationId.trim() || null),
     tenantId: a.tenantId.trim() || null,
     channel: null,
     currency: a.currency.trim() || null,
@@ -219,8 +228,18 @@ export function BatchDisbursementWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemRequestEntry, resvValues, itemIndex, principalSplit, feeSplit]);
 
+  // A fresh correlation id is minted at the reservation publish and reused by every item.request /
+  // terminal publish, so Run History groups the whole batch as one run (ADR-031). Re-firing ("Run
+  // another batch") publishes a new reservation and mints a new id, so sequential batches stay
+  // distinct.
+  const [batchRunCorrelationId, setBatchRunCorrelationId] = useState("");
+
   const reservationMutation = useMutation({
-    mutationFn: () => runFlow(token, group.reservation, toRequest(resvAssembled, buildChaosOptions(resvChaos))),
+    mutationFn: () => {
+      const cid = crypto.randomUUID();
+      setBatchRunCorrelationId(cid);
+      return runFlow(token, group.reservation, toRequest(resvAssembled, buildChaosOptions(resvChaos), cid));
+    },
     onSuccess: r => {
       if (r.status !== "PUBLISHED") {
         setError(r.error ?? "Reservation publish failed");
@@ -241,8 +260,12 @@ export function BatchDisbursementWizard({
 
   const itemMutation = useMutation({
     mutationFn: async () => {
-      // 1. item.request
-      await runFlow(token, group.itemRequest, toRequest(itemAssembled, buildChaosOptions(itemChaos)));
+      // 1. item.request — reuse the batch's correlation id (set when the reservation published)
+      await runFlow(
+        token,
+        group.itemRequest,
+        toRequest(itemAssembled, buildChaosOptions(itemChaos), batchRunCorrelationId || undefined)
+      );
       // 2. terminal: completed | failed
       const ff = itemAssembled.flowFields;
       const itemFee = ff["item_fee"] ?? "0";
@@ -270,7 +293,7 @@ export function BatchDisbursementWizard({
       }
       const terminalType = itemPass ? group.itemCompleted : group.itemFailed;
       const terminalReq: PublishFlowRequest = {
-        correlationId: itemAssembled.correlationId.trim() || resvValues?.["correlation_id"] || null,
+        correlationId: batchRunCorrelationId || itemAssembled.correlationId.trim() || null,
         tenantId: itemAssembled.tenantId.trim() || null,
         channel: null,
         currency: itemAssembled.currency.trim() || resvValues?.["currency"] || null,
@@ -331,7 +354,7 @@ export function BatchDisbursementWizard({
       };
       return runDisbursementBatch(token, body);
     },
-    onSuccess: run => navigate(`/chaos/batches/${run.id}`),
+    onSuccess: run => navigate(runDetailPath(run.id)),
     onError: err => setError(getErrorMessage(err))
   });
 

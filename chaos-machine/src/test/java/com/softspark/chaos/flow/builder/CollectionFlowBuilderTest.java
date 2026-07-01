@@ -3,6 +3,7 @@ package com.softspark.chaos.flow.builder;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.lenient;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.softspark.chaos.flow.FlowContextBuilder;
 import com.softspark.chaos.flow.FlowRequestBuilder;
 import com.softspark.chaos.flow.dto.FeeInput;
@@ -94,6 +95,35 @@ class CollectionFlowBuilderTest {
     assertThat(data.fees().get(0).amount()).isEqualByComparingTo("10.0000");
     assertThat(data.fees().get(0).feeCode()).isEqualTo("FEE-1");
     assertThat(data.fees().get(0).destinationVaId()).isEqualTo("VA-FEE");
+  }
+
+  @Test
+  void should_emitRoleBasedVaWireNames_when_serialized() throws Exception {
+    var request =
+        FlowRequestBuilder.builder()
+            .flowType(FlowType.COLLECTION_COMPLETED)
+            .amount(new BigDecimal("1000.0000"))
+            .currency("GHS")
+            .slotOverrides(Map.of())
+            .flowFields(
+                Map.of(
+                    "transaction_id", "TXN-001",
+                    "provider_id", "PROVIDER_GH",
+                    "provider_reference_id", "PROV-REF-1",
+                    "merchant_ref_id", "MERCH-REF-1"))
+            .build();
+
+    // Fee-less payload (empty fees[]) so the only VA wire keys come from the top-level slots.
+    var data = builder.build(request, ctx("EVT-001", request)).data();
+    String json = new ObjectMapper().writeValueAsString(data);
+
+    // VA ids are named by ledger role: source slot (system, debited) -> system_va_id;
+    // destination slot (organization, credited) -> organization_va_id.
+    assertThat(json)
+        .contains("\"system_va_id\":\"VA-FLOAT\"")
+        .contains("\"organization_va_id\":\"VA-MERCHANT\"")
+        .doesNotContain("source_va_id")
+        .doesNotContain("destination_va_id");
   }
 
   @Test

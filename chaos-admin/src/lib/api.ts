@@ -334,6 +334,7 @@ export type HistoryFilters = {
   vaId?: string;
   eventType?: string;
   correlationId?: string;
+  batchId?: string;
   status?: string;
   from?: string;
   to?: string;
@@ -549,6 +550,42 @@ export type BatchRowResponse = {
   createdAt: string;
 };
 
+// Coarse publish-status rollup for a run in the run-grouped feed (`GET /api/v0/runs`).
+export type RunStatusRollup =
+  | "RUNNING"
+  | "ALL_PUBLISHED"
+  | "HAS_FAILURES"
+  | "FAILED"
+  | string;
+
+// One row of the run-grouped feed (ADR-031). A run is either a tracked `batch_run`
+// (`tracked: true`, drilled down via `?batchId`) or an untracked `correlation_id` group of
+// publish records (`tracked: false`, drilled down via `?correlationId`).
+export type RunSummaryResponse = {
+  runKey: string;
+  tracked: boolean;
+  kind: RunKind | "SINGLE" | "MANUAL_SEQUENCE" | string;
+  flowTypes: string[];
+  eventCount: number;
+  status: RunStatusRollup;
+  publishedCount: number;
+  failedCount: number;
+  intentionalFailure: boolean;
+  firstActivityAt: string;
+  lastActivityAt: string;
+  externalBatchId: string | null;
+  correlationId: string | null;
+  batchId: string | null;
+};
+
+export type RunsFilters = {
+  page?: number;
+  size?: number;
+  from?: string;
+  to?: string;
+  kind?: string;
+};
+
 // ---------------------------------------------------------------------------
 // Ledger Proxy DTOs
 // ---------------------------------------------------------------------------
@@ -592,30 +629,6 @@ export type BatchBalanceItem = {
   totalBalance: number | null;
   lastEntrySequence: number | null;
   balanceAsOf: string | null;
-};
-
-export type LedgerTransactionDto = {
-  transaction_id: string;
-  event_id: string | null;
-  event_type: string | null;
-  source_va_id: string | null;
-  destination_va_id: string | null;
-  amount: number | null;
-  currency: string | null;
-  status: string | null;
-  correlation_id: string | null;
-  created_at: string | null;
-};
-
-export type LedgerTransactionFilters = {
-  page?: number;
-  size?: number;
-  vaId?: string;
-  eventType?: string;
-  correlationId?: string;
-  status?: string;
-  from?: string;
-  to?: string;
 };
 
 // A counterparty leg of a transaction-history record — one line in the same journal entry posted
@@ -759,6 +772,51 @@ export type TrialBalanceResponse = {
   accounts: TrialBalanceEntry[];
 };
 
+// One sibling leg of a reconciliation journal-entry record (the line shape minus its own
+// `siblingLines`). Money fields arrive as decimal strings.
+export type ReconciliationSiblingLine = {
+  lineId: string | null;
+  journalEntryId: string | null;
+  postedAt: string | null;
+  entrySequence: number | null;
+  accountSequence: number | null;
+  accountId: string | null;
+  accountCode: string | null;
+  organizationId: string | null;
+  currency: string | null;
+  direction: string | null;
+  amount: string | null;
+  runningBalance: string | null;
+  runningReservedBalance: string | null;
+  runningPendingBalance: string | null;
+  totalBalanceBefore: string | null;
+  transactionRef: string | null;
+  entryType: string | null;
+  narrative: string | null;
+  memo: string | null;
+  sourceService: string | null;
+  sourceEventId: string | null;
+  metadata: Record<string, unknown> | null;
+};
+
+// One row of the ledger's reconciliation export, read-proxied through the chaos
+// gateway (`GET /ledger/reporting/reconciliation-export`). Each row is a journal-entry line with its
+// sibling legs; the table links by `transactionRef` to the by-reference detail page (ADR-032).
+export type ReconciliationEntryResponse = ReconciliationSiblingLine & {
+  siblingLines: ReconciliationSiblingLine[] | null;
+};
+
+export type LedgerJournalEntriesFilters = {
+  from: string;
+  to: string;
+  accountId?: string | string[];
+  entryType?: string;
+  transactionRef?: string;
+  sourceService?: string;
+  page?: number;
+  size?: number;
+};
+
 // ---------------------------------------------------------------------------
 // API functions — Auth
 // ---------------------------------------------------------------------------
@@ -876,6 +934,20 @@ export function listSentHistory(
 
 export function getSentHistoryRecord(token: string, id: string): Promise<PublishRecordResponse> {
   return request<PublishRecordResponse>(`/history/${encodeURIComponent(id)}`, { token });
+}
+
+// The run-grouped feed that powers the Scenario Runner's Run History tab (ADR-031). Each item is a
+// run (tracked `batch_run` or untracked `correlation_id` group), newest-first; expand a run by
+// re-querying `/history` with `?batchId` (tracked) or `?correlationId` (untracked).
+export function listRuns(
+  token: string,
+  filters: RunsFilters = {}
+): Promise<PageResponse<RunSummaryResponse>> {
+  const { page = 0, size = 20, ...rest } = filters;
+  return request<PageResponse<RunSummaryResponse>>("/runs", {
+    token,
+    query: { page, size, ...rest }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1148,20 +1220,9 @@ export async function getBatchBalances(
   return results.flat();
 }
 
-export function listLedgerTransactions(
-  token: string,
-  filters: LedgerTransactionFilters = {}
-): Promise<PageResponse<LedgerTransactionDto>> {
-  const { page = 0, size = 20, ...rest } = filters;
-  return request<PageResponse<LedgerTransactionDto>>("/ledger/transactions", {
-    token,
-    query: { page, size, ...rest }
-  });
-}
-
 // Fetches a single cursor page of a virtual account's ledger transaction history. This is the
-// correct per-account history endpoint (the global /ledger/transactions list is offset-paginated
-// and not account-scoped). Pages are walked with the returned next/previous cursors.
+// correct per-account history endpoint; the global cross-account browse is listLedgerJournalEntries
+// (`/ledger/reporting/reconciliation-export`). Pages are walked with the returned next/previous cursors.
 export function getAccountTransactionHistory(
   token: string,
   accountId: string,
@@ -1195,6 +1256,31 @@ export function getTrialBalance(
   return request<TrialBalanceResponse>("/ledger/reporting/trial-balance", {
     token,
     query: { from: params.from, to: params.to, currency: params.currency || undefined }
+  });
+}
+
+// Browses the ledger's reconciliation journal-entries export for a window (read-proxied through the
+// chaos gateway, ADR-032). `from`/`to` are required ISO-8601 instants and the ledger caps the span
+// (~7 days), so callers must default and clamp the window before calling. Offset-paginated; optional
+// `accountId` (repeatable), `entryType`, `transactionRef`, `sourceService` filters pass through.
+export function listLedgerJournalEntries(
+  token: string,
+  filters: LedgerJournalEntriesFilters
+): Promise<PageResponse<ReconciliationEntryResponse>> {
+  const { from, to, accountId, entryType, transactionRef, sourceService, page = 0, size = 20 } =
+    filters;
+  return request<PageResponse<ReconciliationEntryResponse>>("/ledger/reporting/reconciliation-export", {
+    token,
+    query: {
+      from,
+      to,
+      accountId,
+      entryType: entryType || undefined,
+      transactionRef: transactionRef || undefined,
+      sourceService: sourceService || undefined,
+      page,
+      size
+    }
   });
 }
 
@@ -1347,27 +1433,12 @@ export function runDisbursementBatch(
 }
 
 // ---------------------------------------------------------------------------
-// API functions — Batches
+// API functions — Runs (tracked-run detail/progress)
 // ---------------------------------------------------------------------------
-
-export function startBatch(token: string, formData: FormData): Promise<BatchRunResponse> {
-  return request<BatchRunResponse>("/batches", {
-    token,
-    method: "POST",
-    formData
-  });
-}
-
-export function listBatches(
-  token: string,
-  params: { page?: number; size?: number } = {}
-): Promise<PageResponse<BatchRunResponse>> {
-  const { page = 0, size = 20 } = params;
-  return request<PageResponse<BatchRunResponse>>("/batches", {
-    token,
-    query: { page, size }
-  });
-}
+//
+// The CSV-batch ingest (`POST /batches`) and the run list (`GET /batches`) were retired in Phase 021
+// (ADR-031); the run list moved to `listRuns` (`GET /runs`). The read-by-id endpoints below back the
+// run-detail/progress page for all run kinds.
 
 export function getBatch(token: string, id: string): Promise<BatchRunResponse> {
   return request<BatchRunResponse>(`/batches/${encodeURIComponent(id)}`, { token });

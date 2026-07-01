@@ -19,7 +19,7 @@ export function LoginPage() {
     "from" in location.state &&
     typeof (location.state as { from?: { pathname?: string; search?: string; hash?: string } }).from?.pathname === "string"
       ? `${(location.state as { from: { pathname: string; search?: string; hash?: string } }).from.pathname}${(location.state as { from?: { search?: string } }).from?.search ?? ""}${(location.state as { from?: { hash?: string } }).from?.hash ?? ""}`
-      : "/chaos/single-flow";
+      : "/chaos/scenario-runner";
 
   if (token) {
     return <Navigate to={redirectTo} replace />;

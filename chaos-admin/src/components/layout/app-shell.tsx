@@ -2,7 +2,6 @@ import { useSession } from "@/features/auth/session-provider";
 import { cn } from "@/lib/utils";
 import {
   Activity,
-  AlertTriangle,
   BookOpen,
   Building2,
   ChevronRight,
@@ -10,7 +9,6 @@ import {
   FileText,
   Globe,
   Globe2,
-  LayersIcon,
   LogOut,
   Play,
   Scale,
@@ -27,9 +25,7 @@ type NavItem = {
 };
 
 const operateNavigation: NavItem[] = [
-  { to: "/chaos/single-flow", label: "Single Flow Run", icon: Play },
-  { to: "/chaos/batches", label: "Batches", icon: LayersIcon },
-  { to: "/chaos/dlq", label: "Dead Letter Queue", icon: AlertTriangle }
+  { to: "/chaos/scenario-runner", label: "Scenario Runner", icon: Play }
 ];
 
 const accountsNavigation: NavItem[] = [
@@ -108,7 +104,7 @@ export function AppShell() {
         <aside className="flex h-full min-h-0 flex-col overflow-y-auto bg-sidebar-bg">
           {/* Logo */}
           <Link
-            to="/chaos/single-flow"
+            to="/chaos/scenario-runner"
             className="flex items-center gap-2.5 px-4 py-5 transition-opacity hover:opacity-80"
           >
             <Activity className="h-7 w-7 shrink-0 text-sidebar-primary" />

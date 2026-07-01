@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -149,5 +150,161 @@ class LedgerClientTest {
     assertThatThrownBy(() -> client.getTrialBalance("caller-token", FROM, TO, null))
         .isInstanceOf(InternalServerErrorException.class);
     server.verify();
+  }
+
+  @Nested
+  @DisplayName("exportJournalEntries")
+  class ExportJournalEntries {
+
+    private static final String ENTRIES_JSON =
+        """
+        {
+          "data": [
+            {
+              "lineId": "line-1",
+              "journalEntryId": "je-1",
+              "postedAt": "2026-06-23T10:00:00Z",
+              "entrySequence": 42,
+              "accountSequence": 7,
+              "accountId": "acct-1",
+              "accountCode": "ASSET.PLATFORM.FLOAT",
+              "organizationId": "org-1",
+              "currency": "GHS",
+              "direction": "DEBIT",
+              "amount": "100.00",
+              "runningBalance": "900.00",
+              "transactionRef": "txn-ref-1",
+              "entryType": "DISBURSEMENT",
+              "narrative": "Disbursement",
+              "memo": null,
+              "sourceService": "ss-disbursement-service",
+              "sourceEventId": "evt-1",
+              "metadata": null,
+              "siblingLines": [
+                {
+                  "lineId": "line-2",
+                  "accountId": "acct-2",
+                  "direction": "CREDIT",
+                  "amount": "100.00",
+                  "currency": "GHS"
+                }
+              ]
+            }
+          ],
+          "page": 0,
+          "pageSize": 20,
+          "total": 1,
+          "pages": 1
+        }
+        """;
+
+    @Test
+    @DisplayName("forwards the window/paging + bearer token and parses entries with sibling legs")
+    void forwardsWindowAndParsesEntries() {
+      server
+          .expect(requestTo(containsString("/api/v0/reporting/reconciliation-export")))
+          .andExpect(method(HttpMethod.GET))
+          .andExpect(requestTo(containsString("from=2026-06-22T00")))
+          .andExpect(requestTo(containsString("to=2026-06-29T00")))
+          .andExpect(queryParam("page", "0"))
+          .andExpect(queryParam("size", "20"))
+          .andExpect(header("Authorization", "Bearer caller-token"))
+          .andRespond(withSuccess(ENTRIES_JSON, MediaType.APPLICATION_JSON));
+
+      var result =
+          client.exportJournalEntries(
+              "caller-token",
+              Instant.parse("2026-06-22T00:00:00Z"),
+              Instant.parse("2026-06-29T00:00:00Z"),
+              null,
+              null,
+              null,
+              null,
+              0,
+              20);
+
+      assertThat(result.data()).hasSize(1);
+      assertThat(result.total()).isEqualTo(1L);
+      var entry = result.data().get(0);
+      assertThat(entry.lineId()).isEqualTo("line-1");
+      assertThat(entry.transactionRef()).isEqualTo("txn-ref-1");
+      assertThat(entry.amount()).isEqualByComparingTo(new BigDecimal("100.00"));
+      assertThat(entry.entrySequence()).isEqualTo(42L);
+      assertThat(entry.memo()).isNull();
+      assertThat(entry.metadata()).isNull();
+      assertThat(entry.siblingLines()).hasSize(1);
+      assertThat(entry.siblingLines().get(0).accountId()).isEqualTo("acct-2");
+      server.verify();
+    }
+
+    @Test
+    @DisplayName("encodes repeatable accountId params and forwards optional filters")
+    void forwardsRepeatableAccountIdAndFilters() {
+      server
+          .expect(requestTo(containsString("accountId=acct-1")))
+          .andExpect(requestTo(containsString("accountId=acct-2")))
+          .andExpect(queryParam("entryType", "DISBURSEMENT"))
+          .andExpect(queryParam("transactionRef", "txn-ref-1"))
+          .andExpect(queryParam("sourceService", "ss-disbursement-service"))
+          .andRespond(withSuccess(ENTRIES_JSON, MediaType.APPLICATION_JSON));
+
+      client.exportJournalEntries(
+          "caller-token",
+          FROM,
+          TO,
+          java.util.List.of("acct-1", "acct-2"),
+          "DISBURSEMENT",
+          "txn-ref-1",
+          "ss-disbursement-service",
+          0,
+          20);
+
+      server.verify();
+    }
+
+    @Test
+    @DisplayName("omits optional filters when null/blank")
+    void omitsOptionalFiltersWhenAbsent() {
+      server
+          .expect(requestTo(not(containsString("accountId"))))
+          .andExpect(requestTo(not(containsString("entryType"))))
+          .andExpect(requestTo(not(containsString("transactionRef"))))
+          .andExpect(requestTo(not(containsString("sourceService"))))
+          .andRespond(withSuccess(ENTRIES_JSON, MediaType.APPLICATION_JSON));
+
+      client.exportJournalEntries("caller-token", FROM, TO, null, null, "  ", null, 0, 20);
+
+      server.verify();
+    }
+
+    @Test
+    @DisplayName("translates a ledger 4xx (e.g. too-wide window) to NotFoundException")
+    void translates4xxToNotFound() {
+      server
+          .expect(requestTo(containsString("/api/v0/reporting/reconciliation-export")))
+          .andRespond(withStatus(HttpStatus.BAD_REQUEST));
+
+      assertThatThrownBy(
+              () ->
+                  client.exportJournalEntries(
+                      "caller-token", FROM, TO, null, null, null, null, 0, 20))
+          .isInstanceOf(NotFoundException.class);
+      server.verify();
+    }
+
+    @Test
+    @DisplayName("translates a ledger 5xx to InternalServerErrorException")
+    void translates5xxToInternalServerError() {
+      server
+          .expect(requestTo(containsString("/api/v0/reporting/reconciliation-export")))
+          .andRespond(withServerError());
+
+      assertThatThrownBy(
+              () ->
+                  client.exportJournalEntries(
+                      "caller-token", FROM, TO, null, null, null, null, 0, 20))
+          .isInstanceOf(InternalServerErrorException.class);
+      server.verify();
+    }
   }
 }

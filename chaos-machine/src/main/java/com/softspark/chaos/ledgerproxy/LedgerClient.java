@@ -11,10 +11,10 @@ import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
-import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerSpringPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
+import com.softspark.chaos.ledgerproxy.dto.ReconciliationEntryDto;
 import com.softspark.chaos.ledgerproxy.dto.ReservationResponse;
 import com.softspark.chaos.ledgerproxy.dto.TrialBalanceDto;
 import jakarta.annotation.Nullable;
@@ -249,26 +249,38 @@ public class LedgerClient {
   }
 
   /**
-   * Lists transactions from the ledger with optional filters.
+   * Exports a page of journal-entry lines for a period from the ledger's reconciliation export.
    *
-   * @param callerToken the caller's bearer token
-   * @param vaId optional filter by source or destination VA id
-   * @param eventType optional filter by event type
-   * @param correlationId optional filter by correlation id
-   * @param from optional ISO-8601 start of time range
-   * @param to optional ISO-8601 end of time range
+   * <p>Proxies the ledger's {@code GET /api/v0/reporting/reconciliation-export} endpoint (paged-JSON
+   * mode, ADR-032) — a real cross-account, time-windowed browse of journal-entry lines (with sibling
+   * legs).
+   * The period bounds are forwarded verbatim; period validity ({@code from}/{@code to} required, span
+   * capped at the ledger's default ~7 days) stays with the ledger, whose {@code 400} is translated to
+   * a {@link NotFoundException} like every other 4xx on this proxy. The optional {@code accountId} is
+   * repeatable; the remaining filters are forwarded when present.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param from the inclusive start of the window (ISO-8601 instant)
+   * @param to the exclusive end of the window (ISO-8601 instant)
+   * @param accountId optional repeatable account-id filter
+   * @param entryType optional entry-type filter (comma-separated list accepted by the ledger)
+   * @param transactionRef optional transaction-ref filter
+   * @param sourceService optional source-service filter
    * @param page zero-based page number
-   * @param size page size
-   * @return a paginated list of transactions
+   * @param size page size (the ledger caps it at 100)
+   * @return a paginated list of reconciliation journal-entry lines
+   * @throws NotFoundException if the ledger returns 4xx (e.g. missing/too-wide window)
+   * @throws InternalServerErrorException if the ledger returns 5xx
    * @throws CircuitBreakerOpenException if the circuit is open
    */
-  public LedgerPageDto<LedgerTransactionDto> listTransactions(
+  public LedgerPageDto<ReconciliationEntryDto> exportJournalEntries(
       String callerToken,
-      @Nullable String vaId,
-      @Nullable String eventType,
-      @Nullable String correlationId,
-      @Nullable String from,
-      @Nullable String to,
+      Instant from,
+      Instant to,
+      @Nullable List<String> accountId,
+      @Nullable String entryType,
+      @Nullable String transactionRef,
+      @Nullable String sourceService,
       int page,
       int size) {
     var token = resolveToken(callerToken);
@@ -280,15 +292,25 @@ public class LedgerClient {
                     uriBuilder -> {
                       var builder =
                           uriBuilder
-                              .path("/api/v0/transactions")
+                              .path("/api/v0/reporting/reconciliation-export")
+                              .queryParam("from", from)
+                              .queryParam("to", to)
                               .queryParam("page", page)
                               .queryParam("size", size);
-                      if (vaId != null) builder = builder.queryParam("vaId", vaId);
-                      if (eventType != null) builder = builder.queryParam("eventType", eventType);
-                      if (correlationId != null)
-                        builder = builder.queryParam("correlationId", correlationId);
-                      if (from != null) builder = builder.queryParam("from", from);
-                      if (to != null) builder = builder.queryParam("to", to);
+                      if (accountId != null) {
+                        for (var id : accountId) {
+                          builder = builder.queryParam("accountId", id);
+                        }
+                      }
+                      if (entryType != null && !entryType.isBlank()) {
+                        builder = builder.queryParam("entryType", entryType);
+                      }
+                      if (transactionRef != null && !transactionRef.isBlank()) {
+                        builder = builder.queryParam("transactionRef", transactionRef);
+                      }
+                      if (sourceService != null && !sourceService.isBlank()) {
+                        builder = builder.queryParam("sourceService", sourceService);
+                      }
                       return builder.build();
                     })
                 .header("Authorization", "Bearer " + token)
@@ -305,7 +327,7 @@ public class LedgerClient {
                       throw new InternalServerErrorException(
                           "Ledger error: " + resp.getStatusCode().value());
                     })
-                .body(new ParameterizedTypeReference<LedgerPageDto<LedgerTransactionDto>>() {}));
+                .body(new ParameterizedTypeReference<LedgerPageDto<ReconciliationEntryDto>>() {}));
   }
 
   /**

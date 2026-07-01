@@ -22,9 +22,10 @@ import org.springframework.stereotype.Component;
  * {@code source}/{@code destination} slot VAs, provider ids, a {@code fees[]} list, and a computed
  * {@code gross_amount = net_amount + Σ fee.amount}.
  *
- * <p>Slots: {@code source} (system PLATFORM_FLOAT — debited), {@code destination} (organization VA —
- * credited). Fee VAs travel per-row inside {@code fees[]}; when no fees are supplied the legacy
- * gross−net single-fee fallback credits the {@code fee} slot for CSV/batch compatibility.
+ * <p>Slots: {@code source} (system PLATFORM_FLOAT — debited, wire {@code system_va_id}),
+ * {@code destination} (organization VA — credited, wire {@code organization_va_id}). Fee VAs travel
+ * per-row inside {@code fees[]}; when no fees are supplied the legacy gross−net single-fee fallback
+ * credits the {@code fee} slot for CSV/batch compatibility.
  */
 @Component
 public class CollectionFlowBuilder implements FlowBuilder<CollectionCompletedEventData> {

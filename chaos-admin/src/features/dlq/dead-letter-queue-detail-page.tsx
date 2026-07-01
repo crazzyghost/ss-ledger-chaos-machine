@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useSession } from "@/features/auth/session-provider";
 import { getDeadLetter, type DeadLetterRecordResponse } from "@/lib/api";
+import { DLQ_PATH } from "@/lib/routes";
 import { formatDate } from "@/lib/utils";
 import { usePersistedTabs } from "@/lib/use-persisted-tabs";
 import { useQuery } from "@tanstack/react-query";
@@ -74,7 +75,7 @@ export function DeadLetterQueueDetailPage() {
   const title = record?.originalTopic ?? id ?? "Dead letter";
 
   const backButton = (
-    <Button variant="ghost" size="sm" onClick={() => navigate("/chaos/dlq")}>
+    <Button variant="ghost" size="sm" onClick={() => navigate(DLQ_PATH)}>
       <ArrowLeft className="mr-1.5 h-4 w-4" />
       Back to queue
     </Button>
@@ -100,7 +101,7 @@ export function DeadLetterQueueDetailPage() {
             icon="error"
             action={<Button onClick={() => void query.refetch()}>Retry</Button>}
             secondaryAction={
-              <Button variant="ghost" onClick={() => navigate("/chaos/dlq")}>
+              <Button variant="ghost" onClick={() => navigate(DLQ_PATH)}>
                 Back to queue
               </Button>
             }
@@ -109,7 +110,7 @@ export function DeadLetterQueueDetailPage() {
           <StatePanel
             title="Dead letter not found"
             description="It may have been pruned or never existed."
-            action={<Button onClick={() => navigate("/chaos/dlq")}>Back to queue</Button>}
+            action={<Button onClick={() => navigate(DLQ_PATH)}>Back to queue</Button>}
           />
         ) : (
           <Tabs value={tab} defaultValue="overview" onValueChange={setTab}>

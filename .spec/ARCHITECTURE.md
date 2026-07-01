@@ -125,10 +125,17 @@ com.softspark.chaos
 │                     # Phase 014: + RunKind.LIFECYCLE (RANDOM lifecycle runner)
 │                     # Phase 016: + RunKind.BATCH_DISBURSEMENT (automatic batch runner; 1 row =
 │                     #   1 item request+terminal unit) + nullable external_batch_id/reservation_id
+│                     # Phase 021: CSV ingest RETIRED (POST /batches, BatchService, CsvFlowParser,
+│                     #   GET /batches list removed); shared BatchRunner/PacingPlan/tables +
+│                     #   GET /batches/{id}(+/rows) KEPT for N_TIMES/LIFECYCLE/BATCH_DISBURSEMENT;
+│                     #   RunKind.CSV + batch_run.filename retained for historical rows (no migration)
 ├── history           # publish records + query API
 │   ├── controller / dto / service / model / repository
 │                     # Phase 017: publish_record gains transaction_request_id (labelled per flow,
 │                     #   indexed) so failures join back to publishes; PublishRecordResponse exposes it
+│                     # Phase 021: + run-grouped GET /api/v0/runs feed (RunSummaryResponse; tracked
+│                     #   batch_run ∪ correlation-grouped publish_record) powering the Run History tab;
+│                     #   drill-down reuses GET /history?batchId|?correlationId (no new table)
 ├── transaction       # Phase 017: ledger.transaction.failed projection + query API
 │   ├── consumer      # LedgerTransactionFailedConsumer + LedgerTransactionFailedEventData (mirror)
 │   ├── model / repository / service / controller / dto
@@ -165,6 +172,13 @@ com.softspark.chaos
                       #   + Phase 016: disbursement-batches/{batchId} read-proxy
                       #     (DisbursementBatchSummaryDto: reservation_id + status + counters) +
                       #     BatchReservationLookup (poll by batch_id) for batch reservation_id/progress
+                      #   + Phase 021: phantom global GET /ledger/transactions proxy REMOVED (no
+                      #     ledger backing — verified vs ss-ledger-service); new
+                      #     GET /ledger/reporting/journal-entries proxy of the ledger reconciliation
+                      #     export (global, date-windowed, ~7d cap, paged) + ReconciliationEntryDto
+                      #     backs the Transactions Ledger view; account-scoped
+                      #     /ledger/accounts/{id}/transactions + /transactions/{ref} kept (per-VA
+                      #     detail + by-ref detail), ADR-032
 ```
 
 ## 5. Frontend module map (`src/`, follows swift-admin)
@@ -191,8 +205,15 @@ src
     ├── transactions       # search by VA id + filters
     │                      #   Phase 017: "Sent" tab gains a ledger **Outcome** column (published-to-Kafka
     │                      #     vs ledger-accepted/rejected) via one batch /transaction-failures lookup per page
+    │                      #   Phase 021: standalone page becomes LEDGER-ONLY + global date-windowed browse
+    │                      #     (journal-entries via /ledger/reporting/journal-entries, default ≤7d window +
+    │                      #     account/entryType/txnRef filters; row → /transactions/:ref by-ref detail);
+    │                      #     the "Sent" tab moves into the Scenario Runner's Run History (ADR-032).
+    │                      #     The reusable Sent event row + OutcomeCell are extracted for Run History reuse.
+    │                      #     (per-VA tab on the VA detail page keeps the account-scoped cursor proxy)
     ├── trial-balance      # Phase 012: read-only trial-balance report (period + currency filters, totals, per-account table)
-    └── chaos              # Single Flow Run (radio + catalog-driven form + chaos widget) + CSV upload + run results
+    └── chaos              # Scenario Runner (Run Scenario: radio + catalog-driven form + chaos widget) + run results
+                           #   (CSV upload retired in Phase 021; was: Single Flow Run + CSV upload)
                            #   Phase 011: transaction-type-form, va-picker, chaos-options-panel (two-column)
                            #   Phase 014: fee-list-field, country-select, lifecycle-wizard (2-step,
                            #     outcome-selector, both-forms step 2), reservation-field (poll→manual),
@@ -205,9 +226,16 @@ src
                            #   Phase 019: use-reservation-watch (bounded poll by transactionRef/batch_id) →
                            #     sonner toasts on reservation created + released/expired/captured (lifecycle +
                            #     batch wizards); ADR-018/023 read-proxy reservation_id sourcing unchanged
-    └── dlq                # Phase 020: "Dead Letter Queue" (Operate nav, route /chaos/dlq[/:id])
+                           #   Phase 021: re-homed as the **Scenario Runner** tabbed shell
+                           #     (scenario-runner-layout + nested deep-linkable routes): Run Scenario (this
+                           #     page) · Run History (run-history-tab over GET /api/v0/runs) · DLQ. CSV
+                           #     batch-upload-page + batches-page (list) RETIRED; batch-run-page KEPT as the
+                           #     run detail @ /chaos/scenario-runner/runs/:runId; redirects from old paths
+    └── dlq                # Phase 020: "Dead Letter Queue" list + tabbed detail
                            #   dead-letter-queue-page (filterable list: domain/txn id/txn type) +
                            #   dead-letter-queue-detail-page (tabbed: Overview + Message via JsonPanel)
+                           #   Phase 021: RELOCATED under the Scenario Runner DLQ tab
+                           #     (/chaos/scenario-runner/dlq[/:id]); standalone Operate nav item removed
 ```
 
 ## 6. The ledger flows (event surface the chaos machine drives)
@@ -307,8 +335,9 @@ config-seeded approach of Phase 002 / task 001.)
 | 018 | [Balance History](phases/018-balance-history/DESIGN.md) | Adds the **third inbound consumer** — `ledger.balance.updated` → a per-account, event-sourced **`balance_history`** projection (Flyway `V14`) — plus `GET /api/v0/virtual-accounts/{vaId}/balance-history` (+ a flat/batch variant), a **Balance tab** on the VA detail page, and a **run-page info toast** ("Balance updated on {account}") reusing the Part 1 toaster. Rides the Part 1 generalized consumer (a listener + mirror record). Per-account, **not** transaction-correlatable (`ledger.balance.updated` carries no `transaction_request_id`; `correlation_id` is random) — the run-page toast is therefore heuristically scoped (account + time), with honest copy; complements (does not supersede) Phase 015's live read-through. **Part 2 of 4** ([ADR-027](decisions/027-balance-history-projection-from-ledger-balance-updated.md)) |
 | 019 | [Reservation Lifecycle Tracking](phases/019-reservation-lifecycle-tracking/DESIGN.md) | Adds the **fourth inbound consumer** — `ledger.reservation.created` + `.released` → a **stateful, batch-aware `reservation`** projection (Flyway `V15`; `ACTIVE`→`PARTIALLY_RESOLVED`→`CAPTURED`\|`RELEASED`\|`EXPIRED`, monotonic upsert by `reservation_id`) — plus per-VA + flat query endpoints, a **Reservations tab** on the VA detail page, and **create/release toasts** in the settlement & disbursement flows. **Precisely** correlatable: the event's `transaction_id` is the inbound `transactionRef` = the chaos request id, so toasts are request-id-scoped (not heuristic). Complements (does not supersede) the ADR-018/023 read-proxy `reservation_id` sourcing. **Part 3 of 4** ([ADR-028](decisions/028-reservation-lifecycle-projection.md)) |
 | 020 | [Dead Letter Queue Views](phases/020-dead-letter-queue-views/DESIGN.md) | **Final part (4 of 4).** A **tolerant DLT consumer** (no re-dead-lettering) ingests the ledger's **inbound** DLTs (`ledger.<flow-topic>.dlt`, 17 topics — the chaos machine's deliberately-bad traffic the ledger rejected) into a **single domain-tagged `dlq` table** (Flyway `V16`; rich `DeadLetterTopicRecord` format → error class/reason + retry count + original payload; dedup by topic/partition/offset; best-effort txn-id/type extraction). Adds `GET /api/v0/dlq` (filters: domain / transaction id / transaction type) + `/{id}`, and a **"Dead Letter Queue"** nav item under *Operate* → list → tabbed detail (Overview + Message). Chaos-own consumer DLTs are out of scope (different format), foldable in later behind a `source` discriminator ([ADR-029](decisions/029-dead-letter-queue-projection.md)) |
+| 021 | [Unified Scenario Runner](phases/021-unified-scenario-runner/DESIGN.md) | A frontend-led **information-architecture consolidation** (idea `016_unified_scenario_runner.md`): the **Operate** nav collapses to a single **tabbed Scenario Runner** — *Run Scenario* (today's Single Flow Run), *Run History* (today's "Sent (Chaos History)" tab, now **grouped by run** in an expandable accordion), *DLQ* (today's Dead Letter Queue) — with deep-linkable nested routes + redirects from old paths. Backed by a new read-only **`GET /api/v0/runs`** feed (tracked `batch_run` ∪ correlation-grouped `publish_record`; drill-down via the existing `/history`). **Retires CSV-batch end-to-end** (FE+BE: `POST /batches` upload, `BatchService`, `CsvFlowParser`, the upload + *Batches* list pages) while **preserving** the shared run-tracking infra (`batch_run`, `BatchRunner`, `PacingPlan`, the N-Times/lifecycle/batch-disbursement runners, `GET /batches/{id}`+`/rows`). Also **fixes the broken Transactions Ledger view** by removing the phantom global `GET /ledger/transactions` proxy (no ledger backing) and re-pointing it to a new `GET /ledger/reporting/journal-entries` proxy of the ledger's reconciliation export (global, date-windowed, ~7-day span cap, paged), made the page's main content. **No new tables / Kafka / Flyway migration** ([ADR-030](decisions/030-unified-scenario-runner-navigation.md), [ADR-031](decisions/031-run-grouped-history-and-csv-retirement.md), [ADR-032](decisions/032-ledger-transactions-account-scoped-view.md)) |
 
-Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013** → **014** → **015** → **016** → **017** → **018** → **019** → **020**.
+Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013** → **014** → **015** → **016** → **017** → **018** → **019** → **020** → **021**.
 Phase 007 (formerly `025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies
 phases 001–007. Phases 009 and 010 are the latest increment (idea `002_countries_va_via_kafka.md`)
 and run largely in parallel — they converge where the org-VA create form (009) consumes the
@@ -465,6 +494,34 @@ foldable in later behind a `source` discriminator without a migration
 ledger Kafka events" series is complete: the chaos machine consumes the ledger's failure
 (`017`), balance (`018`), and reservation (`019`) outbound events, and observes the dead letters
 of its own inbound traffic (`020`).
+Phase 021 (idea `016_unified_scenario_runner.md`) is a **frontend-led information-architecture
+consolidation** with two small backend changes and **no new domain, Kafka surface, table, or Flyway
+migration**. The **Operate** nav collapses from three items (*Single Flow Run*, *Batches*, *Dead
+Letter Queue*) to a single **tabbed Scenario Runner** with deep-linkable nested routes —
+*Run Scenario* (the unchanged Single Flow Run page), *Run History*, and *DLQ* (the relocated
+dead-letter list/detail) — plus redirects from every old `/chaos/*` path. **Run History** merges
+two surfaces that until now ran in parallel: the flat *Sent (Chaos History)* event list and the
+*Batches* run list. It is an **expandable accordion grouped by run**, fed by a new read-only
+**`GET /api/v0/runs`** that unions tracked `batch_run` rows with correlation-grouped untracked
+`publish_record`s (group key = `COALESCE(batch_id, correlation_id)`); expanding a run lazy-loads its
+events from the existing `GET /api/v0/history?batchId|?correlationId`, and a tracked run deep-links
+to the **preserved** run-detail/progress page. The **CSV-batch capability is retired end-to-end** —
+the CSV upload + ingest path (`POST /batches`, `BatchService`, `CsvFlowParser`) and the frontend
+upload + *Batches* list pages are removed — but the **shared** run-tracking core (`batch_run`/
+`batch_row`, `BatchRunner`, `PacingPlan`, the N-Times-async / lifecycle-random /
+batch-disbursement-automatic runners, and `GET /batches/{id}`+`/rows`) is **kept** verbatim, since
+those three run kinds ride it (`RunKind.CSV` + `batch_run.filename` stay for historical rows, so no
+destructive migration). Finally, it **fixes the long-broken Transactions Ledger view** (idea
+`009_transactions_ledger_tab.md`, never previously designed): the chaos `GET /api/v0/ledger/transactions`
+global-list proxy targeted a ledger endpoint that **does not exist** (verified against
+`ss-ledger-service` — the ledger serves only by-reference `GET /transactions/{ref}` and
+account-scoped `GET /accounts/{id}/transactions`), so that phantom proxy is removed and the view is
+re-pointed (operator's "for now" choice) to a new chaos proxy of the ledger's
+`GET /api/v0/reporting/journal-entries` reconciliation export — a real **cross-account, date-windowed**
+browse (required `from`/`to`, ~7-day span cap, offset-paged) — made the page's main content (its
+*Sent* tab moves into Run History; the account-scoped cursor proxy stays for the per-VA detail view) ([ADR-030](decisions/030-unified-scenario-runner-navigation.md),
+[ADR-031](decisions/031-run-grouped-history-and-csv-retirement.md),
+[ADR-032](decisions/032-ledger-transactions-account-scoped-view.md)).
 
 ## 9. Cross-cutting non-functional posture
 

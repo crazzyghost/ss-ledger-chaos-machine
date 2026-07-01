@@ -48,6 +48,27 @@ public interface HistoryWriter {
       EventEnvelope<?> envelope, String topic, String errorMsg, FlowRequest request);
 
   /**
+   * Records a failed publish attempt that belongs to a tracked run, stamping the run/row linkage so
+   * the failed event groups under its {@code batch_run} in the {@code /runs} feed (rather than
+   * leaking as a stray untracked run).
+   *
+   * @param envelope the event envelope that failed to publish
+   * @param topic the Kafka topic
+   * @param errorMsg the publisher error message
+   * @param request the originating flow request
+   * @param batchId the tracked run identifier
+   * @param batchRowId the originating run-row identifier, or {@code null}
+   * @return the pre-generated history record ULID
+   */
+  String recordBatchFailure(
+      EventEnvelope<?> envelope,
+      String topic,
+      String errorMsg,
+      FlowRequest request,
+      String batchId,
+      @Nullable String batchRowId);
+
+  /**
    * Records a publish event that originated from a CSV batch run.
    *
    * @param envelope the published event envelope

@@ -20,6 +20,7 @@ import {
   type FlowResult,
   type PublishFlowRequest
 } from "@/lib/api";
+import { runDetailPath } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, Play, RefreshCw } from "lucide-react";
@@ -52,9 +53,16 @@ const EMPTY_ASSEMBLED: AssembledFlow = {
 const RESERVATION_POLL_INTERVAL_MS = 1500;
 const RESERVATION_POLL_TIMEOUT_MS = 15_000;
 
-function toRequest(a: AssembledFlow, chaos: ChaosOptions | null): PublishFlowRequest {
+// `correlationIdOverride`, when provided, forces the published correlation_id — the manual lifecycle
+// passes one stable id across its initiated + completed/failed publishes so Run History groups the
+// two events under a single run (ADR-031); otherwise each form mint a fresh id and they fragment.
+function toRequest(
+  a: AssembledFlow,
+  chaos: ChaosOptions | null,
+  correlationIdOverride?: string
+): PublishFlowRequest {
   return {
-    correlationId: a.correlationId.trim() || null,
+    correlationId: correlationIdOverride ?? (a.correlationId.trim() || null),
     tenantId: a.tenantId.trim() || null,
     channel: null,
     currency: a.currency.trim() || null,
@@ -210,9 +218,22 @@ export function LifecycleWizard({
     return initial;
   }, [secondaryEntry, step1Values, lifecycle.carryOver, reservationId]);
 
+  // A fresh correlation id is minted at each initiated publish and reused by that run's secondary
+  // publish, so Run History groups the two events as one run (ADR-031). Re-firing ("Run another")
+  // mints a new id, so sequential runs stay distinct. Completion-only mode is a single publish and
+  // keeps its own form correlation_id (no override).
+  const [runCorrelationId, setRunCorrelationId] = useState("");
+
   const step1Mutation = useMutation<FlowResult>({
-    mutationFn: () =>
-      runFlow(token, lifecycle.initiated, toRequest(step1Assembled, buildChaosOptions(step1Chaos))),
+    mutationFn: () => {
+      const cid = crypto.randomUUID();
+      setRunCorrelationId(cid);
+      return runFlow(
+        token,
+        lifecycle.initiated,
+        toRequest(step1Assembled, buildChaosOptions(step1Chaos), cid)
+      );
+    },
     onSuccess: r => {
       if (r.status !== "PUBLISHED") {
         setError(r.error ?? "Initiated publish failed");
@@ -230,7 +251,17 @@ export function LifecycleWizard({
 
   const step2Mutation = useMutation<FlowResult>({
     mutationFn: () =>
-      runFlow(token, secondaryType, toRequest(step2Assembled, buildChaosOptions(step2Chaos))),
+      runFlow(
+        token,
+        secondaryType,
+        toRequest(
+          step2Assembled,
+          buildChaosOptions(step2Chaos),
+          // Full mode: reuse the initiated run's id so the pair groups as one run. Completion-only
+          // mode is a single publish — keep the form's own correlation_id.
+          mode === "full" ? runCorrelationId || undefined : undefined
+        )
+      ),
     onSuccess: r => {
       setError(null);
       setResult(r);
@@ -248,7 +279,7 @@ export function LifecycleWizard({
       });
       return runRandomLifecycle(token, lifecycle.initiated, req);
     },
-    onSuccess: run => navigate(`/chaos/batches/${run.id}`),
+    onSuccess: run => navigate(runDetailPath(run.id)),
     onError: err => setError(getErrorMessage(err))
   });
 

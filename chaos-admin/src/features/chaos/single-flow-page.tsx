@@ -38,6 +38,7 @@ import {
   type PublishFlowRequest,
   type TransactionFailureResponse
 } from "@/lib/api";
+import { runDetailPath } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Play, RefreshCw } from "lucide-react";
@@ -280,7 +281,7 @@ export function SingleFlowRunPage() {
       setFormError(null);
       if (outcome.type === "ntimesAsync") {
         clearWatches();
-        navigate(`/chaos/batches/${outcome.run.id}`);
+        navigate(runDetailPath(outcome.run.id));
         return;
       }
       if (outcome.type === "ntimesSync") {

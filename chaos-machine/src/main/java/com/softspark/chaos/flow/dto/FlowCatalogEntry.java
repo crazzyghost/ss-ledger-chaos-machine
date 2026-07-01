@@ -9,8 +9,12 @@ import java.util.List;
  *
  * <p>Returned by {@code GET /api/v0/flows/catalog} to help callers construct valid flow requests.
  * The {@code fields} descriptors are the source of truth for the Single Flow Run form;
- * {@code requiredFields}/{@code optionalFields}/{@code csvColumns} remain for legacy consumers (the
- * CSV batch page) and are unchanged.
+ * {@code requiredFields}/{@code optionalFields} remain for legacy consumers.
+ *
+ * <p><strong>Vestigial:</strong> {@code csvColumns} is retained but no longer read by anything — the
+ * CSV-batch ingest path (its only consumer, {@code CsvFlowParser}) was retired in Phase 021
+ * (ADR-031). It is kept on the record only to avoid stripping a positional argument from every
+ * catalog call site; it may be removed wholesale in a future cleanup.
  *
  * @param flowType the flow type
  * @param topic the Kafka topic this flow publishes to
@@ -19,7 +23,7 @@ import java.util.List;
  * @param fields structured per-field descriptors driving the redesigned form
  * @param requiredFields list of required {@code flowFields} keys (legacy)
  * @param optionalFields list of optional {@code flowFields} keys (legacy)
- * @param csvColumns column names expected in a CSV batch file for this flow
+ * @param csvColumns vestigial: CSV retired (Phase 021); no longer read
  * @param partitionKeyField the {@code flowFields} key used as the Kafka partition key
  * @param lifecycle the lifecycle grouping for a multi-step transaction type (set on the
  *     {@code initiated} entry); {@code null} for single-shot flows

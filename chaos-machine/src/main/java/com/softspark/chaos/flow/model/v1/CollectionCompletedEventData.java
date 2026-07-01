@@ -1,5 +1,6 @@
 package com.softspark.chaos.flow.model.v1;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
@@ -16,8 +17,9 @@ import org.springframework.lang.Nullable;
  * samples); the ledger uses {@code transaction_id} as its idempotency key.
  *
  * @param transactionId the lifecycle/transaction id (the ledger's idempotency key)
- * @param sourceVaId the system PLATFORM_FLOAT virtual account (debited)
- * @param destinationVaId the merchant/organization virtual account (credited)
+ * @param sourceVaId the system PLATFORM_FLOAT virtual account, debited (wire: {@code system_va_id})
+ * @param destinationVaId the merchant/organization virtual account, credited (wire: {@code
+ *     organization_va_id})
  * @param providerId the payment provider identifier
  * @param providerReferenceId the payment provider's reference id
  * @param grossAmount the total collected amount ({@code net + Σ fee.amount})
@@ -32,8 +34,8 @@ import org.springframework.lang.Nullable;
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public record CollectionCompletedEventData(
     String transactionId,
-    String sourceVaId,
-    String destinationVaId,
+    @JsonProperty("system_va_id") String sourceVaId,
+    @JsonProperty("organization_va_id") String destinationVaId,
     String providerId,
     String providerReferenceId,
     BigDecimal grossAmount,

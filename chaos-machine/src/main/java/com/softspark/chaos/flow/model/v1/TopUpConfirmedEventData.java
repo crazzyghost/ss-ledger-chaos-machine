@@ -1,5 +1,6 @@
 package com.softspark.chaos.flow.model.v1;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
@@ -12,8 +13,9 @@ import java.math.BigDecimal;
  *
  * @param topupRequestId the top-up request identifier
  * @param organizationId the organization receiving the top-up
- * @param sourceVaId the client virtual account debited (top-up source)
- * @param destinationVaId the system PLATFORM_FLOAT virtual account credited
+ * @param sourceVaId the organization virtual account, credited (wire: {@code organization_va_id})
+ * @param destinationVaId the system PLATFORM_FLOAT virtual account, debited (wire: {@code
+ *     system_va_id})
  * @param amount the top-up amount
  * @param currency the ISO-4217 currency code
  * @param sourcePaymentReference the payment reference from the source payment provider
@@ -25,8 +27,8 @@ import java.math.BigDecimal;
 public record TopUpConfirmedEventData(
     String topupRequestId,
     String organizationId,
-    String sourceVaId,
-    String destinationVaId,
+    @JsonProperty("organization_va_id") String sourceVaId,
+    @JsonProperty("system_va_id") String destinationVaId,
     BigDecimal amount,
     String currency,
     String sourcePaymentReference,

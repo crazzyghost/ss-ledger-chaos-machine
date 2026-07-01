@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 /**
  * Builds {@link EventEnvelope} payloads for {@link FlowType#TOPUP_CONFIRMED} events.
  *
- * <p>Slots: {@code source} (client VA — debited), {@code destination} (system PLATFORM_FLOAT —
- * credited).
+ * <p>Slots: {@code source} (organization VA — credited, wire {@code organization_va_id}),
+ * {@code destination} (system PLATFORM_FLOAT — debited, wire {@code system_va_id}).
  */
 @Component
 public class TopUpConfirmedFlowBuilder implements FlowBuilder<TopUpConfirmedEventData> {

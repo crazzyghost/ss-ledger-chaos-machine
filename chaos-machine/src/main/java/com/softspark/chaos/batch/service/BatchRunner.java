@@ -330,8 +330,10 @@ public class BatchRunner {
       int total,
       BatchDisbursementRunner runner) {
 
-    // Publish the single reservation first and stamp the resolved reservation_id on the run.
-    String reservationId = runner.publishReservation(plan);
+    // Publish the single reservation first and stamp the resolved reservation_id on the run. The
+    // reservation belongs to the run (batch_id) but has no batch row, so link it row-less.
+    String reservationId =
+        flowEngine.withBatchLink(batchRunId, null, () -> runner.publishReservation(plan));
     stampReservation(batchRunId, reservationId);
 
     int concurrency = Math.max(1, Math.min(pacing.concurrency(), maxWorkers));
@@ -383,7 +385,9 @@ public class BatchRunner {
       String reservationId) {
     BatchRow row = unit.row();
     try {
-      BatchDisbursementRunner.ItemResult result = runner.runItem(plan, unit.index(), reservationId);
+      BatchDisbursementRunner.ItemResult result =
+          flowEngine.withBatchLink(
+              row.getBatchId(), row.getId(), () -> runner.runItem(plan, unit.index(), reservationId));
       if (result.success()) {
         row.setStatus(BatchRowStatus.PUBLISHED);
         row.setEventId(result.requestEventId());
@@ -419,7 +423,9 @@ public class BatchRunner {
   @Transactional
   void processRow(BatchRow row, FlowRequest request, @Nullable String chaosLabel) {
     try {
-      var result = flowEngine.execute(request, chaosLabel);
+      var result =
+          flowEngine.withBatchLink(
+              row.getBatchId(), row.getId(), () -> flowEngine.execute(request, chaosLabel));
       row.setStatus(BatchRowStatus.PUBLISHED);
       row.setEventId(result.eventId());
       batchRowRepository.save(row);
@@ -440,8 +446,12 @@ public class BatchRunner {
     BatchRow row = unit.row();
     try {
       LifecycleRunner.Result result =
-          lifecycleRunner.runOne(
-              unit.initiated(), unit.lifecycle(), unit.seed(), unit.index(), total);
+          flowEngine.withBatchLink(
+              row.getBatchId(),
+              row.getId(),
+              () ->
+                  lifecycleRunner.runOne(
+                      unit.initiated(), unit.lifecycle(), unit.seed(), unit.index(), total));
       if (result.success()) {
         row.setStatus(BatchRowStatus.PUBLISHED);
         row.setEventId(result.initiatedEventId());

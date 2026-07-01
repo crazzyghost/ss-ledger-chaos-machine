@@ -74,15 +74,20 @@ export function InlineNotice({ title, description, tone = "default", className }
   return (
     <div
       className={cn(
-        "rounded-lg border px-4 py-3 text-xs",
+        "min-w-0 rounded-lg border px-4 py-3 text-xs",
         tone === "danger" && "border-destructive/30 bg-destructive/5 text-destructive",
         tone === "warning" && "border-amber-200 bg-amber-50/80 text-amber-900",
         tone === "default" && "border-border bg-muted/40 text-muted-foreground",
         className
       )}
     >
-      {title ? <p className="font-medium text-foreground break-words">{title}</p> : null}
-      <p className="break-words">{description}</p>
+      {/* overflow-wrap:anywhere (not just break-word) so an unbreakable token — e.g. a long ledger
+          stack-trace / fully-qualified class name — also shrinks the min-content width and wraps,
+          instead of blowing out the grid track and forcing page-wide horizontal overflow. */}
+      {title ? (
+        <p className="font-medium text-foreground [overflow-wrap:anywhere]">{title}</p>
+      ) : null}
+      <p className="[overflow-wrap:anywhere]">{description}</p>
     </div>
   );
 }

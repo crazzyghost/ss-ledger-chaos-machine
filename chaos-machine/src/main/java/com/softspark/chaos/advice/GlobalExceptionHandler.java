@@ -15,6 +15,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 /**
  * Global exception handler for all REST controllers.
@@ -109,6 +110,23 @@ public class GlobalExceptionHandler {
     String requestId = getRequestId();
     ApiError error = new ApiError(requestId, "Access denied", List.of());
     return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+  }
+
+  /**
+   * Handles {@link NoResourceFoundException} thrown when no handler matches the request path (e.g. a
+   * retired endpoint). Returns 404 — standard REST semantics — rather than letting the generic 500
+   * handler below swallow it. Without this, an unmapped path would surface as a {@code 500}.
+   *
+   * @param ex the no-resource exception
+   * @param request the current HTTP request
+   * @return a 404 Not Found response containing an {@link ApiError}
+   */
+  @ExceptionHandler(NoResourceFoundException.class)
+  public ResponseEntity<ApiError> handleNoResourceFound(
+      NoResourceFoundException ex, HttpServletRequest request) {
+    String requestId = getRequestId();
+    ApiError error = new ApiError(requestId, "Resource not found", List.of());
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
   }
 
   @ExceptionHandler(Exception.class)

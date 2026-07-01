@@ -94,6 +94,32 @@ public class AsyncHistoryWriter implements HistoryWriter {
   }
 
   @Override
+  public String recordBatchFailure(
+      EventEnvelope<?> envelope,
+      String topic,
+      String errorMsg,
+      FlowRequest request,
+      String batchId,
+      @Nullable String batchRowId) {
+    String historyId = Ids.generate();
+    var event =
+        new HistoryEvent(
+            historyId,
+            envelope,
+            topic,
+            request,
+            "FAILED",
+            -1L,
+            -1,
+            null,
+            false,
+            errorMsg,
+            new BatchContext(batchId, batchRowId));
+    offerOrDrop(event);
+    return historyId;
+  }
+
+  @Override
   public String recordBatch(
       EventEnvelope<?> envelope,
       String topic,

@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select";
 import { Table, TableContainer, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import { useSession } from "@/features/auth/session-provider";
 import { listDeadLetters } from "@/lib/api";
+import { dlqDetailPath } from "@/lib/routes";
 import { formatDate, formatEnumValue } from "@/lib/utils";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
@@ -168,11 +169,11 @@ export function DeadLetterQueuePage() {
                     role="button"
                     tabIndex={0}
                     className="cursor-pointer transition-colors hover:bg-muted/40 focus:bg-muted/40 focus:outline-none"
-                    onClick={() => navigate(`/chaos/dlq/${encodeURIComponent(record.id)}`)}
+                    onClick={() => navigate(dlqDetailPath(record.id))}
                     onKeyDown={e => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        navigate(`/chaos/dlq/${encodeURIComponent(record.id)}`);
+                        navigate(dlqDetailPath(record.id));
                       }
                     }}
                   >
