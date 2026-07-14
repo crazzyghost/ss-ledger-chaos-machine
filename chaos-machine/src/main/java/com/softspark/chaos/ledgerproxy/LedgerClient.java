@@ -10,8 +10,10 @@ import com.softspark.chaos.ledgerproxy.dto.DisbursementBatchSummaryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerExportResult;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerSpringPageDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionExportDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionHistoryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerTransactionReferenceDto;
 import com.softspark.chaos.ledgerproxy.dto.ReconciliationEntryDto;
@@ -24,17 +26,26 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 /**
- * Gateway component that issues read-only calls to {@code ss-ledger-service} guarded by a
- * minimal {@link CircuitBreaker}.
+ * Gateway component that issues calls to {@code ss-ledger-service} guarded by a minimal
+ * {@link CircuitBreaker}.
  *
  * <p>When the circuit is open a {@link CircuitBreakerOpenException} propagates to the controller,
  * which converts it to a {@code 503} response so the chaos machine stays responsive under
  * ledger outage.
+ *
+ * <p><strong>Two error conventions live here</strong> (ADR-035). The read methods collapse every
+ * ledger 4xx to a {@link NotFoundException} — long-standing, documented, and depended on by the
+ * frontend. The statement-export methods ({@link #createExport}, {@link #getExport},
+ * {@link #listExports}, {@link #cancelExport}) propagate the ledger's status faithfully via
+ * {@link LedgerStatusPropagation}, because their 400/401/403/404/409 mean five different things.
+ * The latter is the target convention; migrating the reads is a follow-up, not licence to collapse
+ * a new export method to a 404.
  */
 @Component
 public class LedgerClient {
@@ -598,6 +609,197 @@ public class LedgerClient {
                           "Ledger error: " + resp.getStatusCode().value());
                     })
                 .body(DisbursementBatchSummaryDto.class));
+  }
+
+  /**
+   * Creates an account-statement export on the ledger, or joins the one already active for the same
+   * resolved window and format.
+   *
+   * <p>Proxies the ledger's {@code PUT /api/v0/accounts/{accountId}/transaction-exports}. Every
+   * parameter is a query param — the ledger's contract has no request body — and every one is
+   * forwarded verbatim: the chaos machine re-validates nothing (ADR-033). Format and range-type
+   * names travel as strings so a format the ledger learns tomorrow passes through this proxy rather
+   * than being rejected by it.
+   *
+   * <p>The returned {@link LedgerExportResult#created()} carries the ledger's {@code 201} (created)
+   * vs {@code 200} (joined the active duplicate) distinction, which the controller echoes.
+   *
+   * <p>Errors are propagated <strong>faithfully</strong> (ADR-035) — unlike the read methods above,
+   * a ledger 400/401/403/404/409 keeps its status and its message. See {@link
+   * LedgerStatusPropagation}.
+   *
+   * @param callerToken the caller's bearer token; the ledger enforces {@code
+   *     ledger_account_transactions:export::allow} and its own org scope
+   * @param accountId the ledger account to export
+   * @param format the artifact format ({@code CSV}/{@code PDF}, parsed case-insensitively)
+   * @param rangeType the window kind ({@code DAILY}…{@code CUSTOM}, parsed case-insensitively)
+   * @param from the start of the window
+   * @param to the exclusive end of the window; required by the ledger only for {@code CUSTOM}
+   * @return the created export, or the active duplicate it joined
+   * @throws com.softspark.chaos.exception.BadRequestException if the ledger rejects the window
+   * @throws com.softspark.chaos.exception.ForbiddenException if the token lacks export authority or
+   *     the account is out of its org scope
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerExportResult createExport(
+      String callerToken,
+      String accountId,
+      String format,
+      String rangeType,
+      Instant from,
+      @Nullable Instant to) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () -> {
+          var response =
+              restClient
+                  .put()
+                  .uri(
+                      uriBuilder -> {
+                        var builder =
+                            uriBuilder
+                                .path("/api/v0/accounts/{id}/transaction-exports")
+                                .queryParam("format", format)
+                                .queryParam("rangeType", rangeType)
+                                .queryParam("from", from);
+                        if (to != null) {
+                          builder = builder.queryParam("to", to);
+                        }
+                        return builder.build(accountId);
+                      })
+                  .header("Authorization", "Bearer " + token)
+                  .retrieve()
+                  .onStatus(
+                      HttpStatusCode::isError,
+                      (req, resp) -> {
+                        throw LedgerStatusPropagation.toChaosException(req, resp);
+                      })
+                  .toEntity(LedgerTransactionExportDto.class);
+          boolean created = response.getStatusCode().value() == HttpStatus.CREATED.value();
+          return new LedgerExportResult(created, response.getBody());
+        });
+  }
+
+  /**
+   * Fetches a single statement export's status from the ledger.
+   *
+   * <p>Proxies {@code GET /api/v0/accounts/{accountId}/transaction-exports/{exportId}}. The returned
+   * DTO carries the ledger's freshly-minted presigned {@code downloadUrl} when the export is {@code
+   * COMPLETED} — that URL is for <strong>server-side use only</strong> and is dropped on the way out
+   * by {@link com.softspark.chaos.ledgerproxy.dto.TransactionExportResponse} (ADR-034).
+   *
+   * @param callerToken the caller's bearer token
+   * @param accountId the ledger account the export belongs to
+   * @param exportId the export id
+   * @return the export, including its (server-side-only) download URL when completed
+   * @throws com.softspark.chaos.exception.NotFoundException if the export or account is unknown, or
+   *     the export belongs to a different account
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerTransactionExportDto getExport(
+      String callerToken, String accountId, String exportId) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri("/api/v0/accounts/{id}/transaction-exports/{exportId}", accountId, exportId)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(LedgerTransactionExportDto.class));
+  }
+
+  /**
+   * Lists an account's statement exports from the ledger, newest first.
+   *
+   * <p>Proxies {@code GET /api/v0/accounts/{accountId}/transaction-exports}. {@code page}/{@code
+   * pageSize} are forwarded under the ledger's own names and <strong>unclamped</strong> — the ledger
+   * caps {@code pageSize} at 100 and 400s beyond it, and that 400 is now the operator's answer
+   * rather than a chaos-side surprise.
+   *
+   * @param callerToken the caller's bearer token
+   * @param accountId the ledger account whose exports are listed
+   * @param status optional lifecycle-status filter (case-insensitive at the ledger)
+   * @param format optional format filter (case-insensitive at the ledger)
+   * @param page zero-based page number
+   * @param pageSize page size (the ledger's name, and its cap)
+   * @return a page of exports, newest first
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerPageDto<LedgerTransactionExportDto> listExports(
+      String callerToken,
+      String accountId,
+      @Nullable String status,
+      @Nullable String format,
+      int page,
+      int pageSize) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri(
+                    uriBuilder -> {
+                      var builder =
+                          uriBuilder
+                              .path("/api/v0/accounts/{id}/transaction-exports")
+                              .queryParam("page", page)
+                              .queryParam("pageSize", pageSize);
+                      if (status != null && !status.isBlank()) {
+                        builder = builder.queryParam("status", status);
+                      }
+                      if (format != null && !format.isBlank()) {
+                        builder = builder.queryParam("format", format);
+                      }
+                      return builder.build(accountId);
+                    })
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(
+                    new ParameterizedTypeReference<
+                        LedgerPageDto<LedgerTransactionExportDto>>() {}));
+  }
+
+  /**
+   * Cancels a pending or in-progress statement export on the ledger.
+   *
+   * <p>Proxies {@code DELETE /api/v0/accounts/{accountId}/transaction-exports/{exportId}}. A
+   * terminal export ({@code COMPLETED}/{@code FAILED}/{@code CANCELLED}) is a {@code 409}, not a
+   * no-op and emphatically not a {@code 404} — the row is visibly on the operator's screen (ADR-035).
+   *
+   * @param callerToken the caller's bearer token
+   * @param accountId the ledger account the export belongs to
+   * @param exportId the export id
+   * @return the export in its {@code CANCELLED} state
+   * @throws com.softspark.chaos.exception.ConflictException if the export is already terminal
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerTransactionExportDto cancelExport(
+      String callerToken, String accountId, String exportId) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .delete()
+                .uri("/api/v0/accounts/{id}/transaction-exports/{exportId}", accountId, exportId)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(LedgerTransactionExportDto.class));
   }
 
   private String resolveToken(String callerToken) {

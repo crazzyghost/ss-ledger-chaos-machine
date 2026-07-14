@@ -44,6 +44,7 @@ It is **not** a ledger. It owns no journals or balances. It is a *driver* + *gat
 | **Disbursement reservation** | `reservation_id` sourced via a **ledger reservations read-proxy poll** (ledger keys off `transaction_id` and ignores the inbound `reservation_id`); timeout → manual/placeholder | [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md) ([ADR-018](decisions/018-reservation-id-via-ledger-read-proxy-poll.md)) |
 | **Dynamic fees** | Shared `TransactionFeeLine` (incl. `fee_code`) + typed `PublishFlowRequest.fees[]`; `FEE_LIST`/`COUNTRY`/`ULID` descriptor kinds | [Phase 014](phases/014-collection-settlement-disbursement-flows/DESIGN.md) ([ADR-019](decisions/019-dynamic-fee-lines-and-catalog-descriptor-extensions.md)) |
 | **Balance display** | VA detail shows all four buckets (Total/Available/Reserved/Pending) + a **point-in-time "Balance As Of"** view (ledger `?asOf` `LocalDateTime`, zoneless); VA list views show a **total-balance column** fed by one **batch-balance** read-proxy call per page. Thin read-proxy extensions; corrects the camelCase `LedgerBalanceDto` drift | [Phase 015](phases/015-virtual-account-balance-display/DESIGN.md) ([ADR-020](decisions/020-as-of-balance-via-ledger-read-proxy.md), [ADR-021](decisions/021-batch-balance-read-proxy-for-list-column.md)) |
+| **Account statements** | **The ledger owns statement generation** (its Phases 030/031: async export job → Postgres task queue → OpenPDF/Jackson-CSV render → S3). The chaos machine **renders nothing and stores nothing** — it proxies the four export endpoints at full parity (create/poll/list/cancel) and **streams the artifact through the gateway**, so the presigned S3 URL never reaches the browser. First **commands** on the proxy (`PUT`/`DELETE`) → new `LedgerExportController` + **faithful status propagation** (400/401/403/404/409 stop collapsing to 404) | [Phase 022](phases/022-account-statement-downloads/DESIGN.md) ([ADR-033](decisions/033-account-statements-via-ledger-export-proxy.md), [ADR-034](decisions/034-gateway-proxied-artifact-download.md), [ADR-035](decisions/035-faithful-status-propagation-on-ledger-command-proxy.md)) |
 | **Batch disbursement** | A **fan-out lifecycle** (one BATCH reservation → N items, each a request → completed\|failed) driven from Single Flow Run, **distinct from CSV**. Four new flow types over `disbursement.batch.initiated` (`operation` discriminator) + `disbursement.batch.item.{completed,failed}`; **Manual** = client wizard cycling N items (per-item pass/fail), **Automatic** = unattended server runner (even split + outcome policy all/none/K/random) reusing the batch infra (`RunKind.BATCH_DISBURSEMENT`). `reservation_id` + live progress via a `disbursement-batches/{batchId}` read-proxy | [Phase 016](phases/016-batch-disbursement/DESIGN.md) ([ADR-022](decisions/022-batch-disbursement-fan-out-flow-and-dual-mode-orchestration.md), [ADR-023](decisions/023-batch-reservation-id-and-progress-via-batch-summary-read-proxy.md)) |
 
 ## 3. C4 — System Context & Containers
@@ -179,6 +180,17 @@ com.softspark.chaos
                       #     backs the Transactions Ledger view; account-scoped
                       #     /ledger/accounts/{id}/transactions + /transactions/{ref} kept (per-VA
                       #     detail + by-ref detail), ADR-032
+                      #   + Phase 022: the proxy's FIRST COMMANDS. LedgerExportController
+                      #     (/api/v0/ledger/accounts/{id}/transaction-exports — PUT/GET/GET/DELETE,
+                      #     201-vs-200 idempotency preserved) — LedgerReadController stays read-only;
+                      #     LedgerStatusPropagation (faithful 400/401/403/404/409 + ledger's message,
+                      #     scoped to the export methods — ADR-035); two-DTO split
+                      #     (LedgerTransactionExportDto carries downloadUrl internally;
+                      #     TransactionExportResponse structurally cannot — ADR-034);
+                      #     ArtifactFetcher (dedicated client: NO auth header, NO logging
+                      #     interceptor — the presigned URL is a bearer capability, never logged) +
+                      #     StatementFilenameFactory → GET …/{exportId}/download streams the
+                      #     artifact with Content-Disposition: attachment
 ```
 
 ## 5. Frontend module map (`src/`, follows swift-admin)
@@ -188,6 +200,10 @@ src
 ├── app               # router.tsx (createBrowserRouter), error boundary
 ├── main.tsx          # QueryClientProvider, RouterProvider
 ├── lib               # api.ts (fetch + Bearer + ApiError), env.ts (appConfig), auth.ts
+│                     #   Phase 022: api.ts gains the repo's FIRST server-file download path —
+│                     #     raw fetch → Content-Disposition parse → Blob → objectURL → <a download>
+│                     #     (reuses buildUrl/safeJsonMessage/ApiError/_onUnauthorized, as publishNTimes
+│                     #     already hand-rolls fetch); the shared request() stays JSON-only
 ├── components
 │   ├── layout        # app-shell.tsx (sidebar nav), page primitives
 │   └── ui            # shadcn primitives (button, card, dialog, select, table, input…)
@@ -202,6 +218,11 @@ src
     │                      #     the per-account ledger.balance.updated event log (offset-paginated)
     │                      #   Phase 019: detail gains a **Reservations** tab (reservations-tab.tsx) listing
     │                      #     the account's reservation lifecycle states (type/status/amount/batch)
+    │                      #   Phase 022: detail gains a **Statements** tab (statements-tab.tsx) — request
+    │                      #     form (rangeType/from/to/format) + export table with a bounded 2.5s poll
+    │                      #     while any export is PENDING/IN_PROGRESS, download + cancel row actions,
+    │                      #     honest 403 (missing export authority / SYSTEM needs super-user) and
+    │                      #     404 (ledger has no export API) StatePanels
     ├── transactions       # search by VA id + filters
     │                      #   Phase 017: "Sent" tab gains a ledger **Outcome** column (published-to-Kafka
     │                      #     vs ledger-accepted/rejected) via one batch /transaction-failures lookup per page
@@ -336,8 +357,9 @@ config-seeded approach of Phase 002 / task 001.)
 | 019 | [Reservation Lifecycle Tracking](phases/019-reservation-lifecycle-tracking/DESIGN.md) | Adds the **fourth inbound consumer** — `ledger.reservation.created` + `.released` → a **stateful, batch-aware `reservation`** projection (Flyway `V15`; `ACTIVE`→`PARTIALLY_RESOLVED`→`CAPTURED`\|`RELEASED`\|`EXPIRED`, monotonic upsert by `reservation_id`) — plus per-VA + flat query endpoints, a **Reservations tab** on the VA detail page, and **create/release toasts** in the settlement & disbursement flows. **Precisely** correlatable: the event's `transaction_id` is the inbound `transactionRef` = the chaos request id, so toasts are request-id-scoped (not heuristic). Complements (does not supersede) the ADR-018/023 read-proxy `reservation_id` sourcing. **Part 3 of 4** ([ADR-028](decisions/028-reservation-lifecycle-projection.md)) |
 | 020 | [Dead Letter Queue Views](phases/020-dead-letter-queue-views/DESIGN.md) | **Final part (4 of 4).** A **tolerant DLT consumer** (no re-dead-lettering) ingests the ledger's **inbound** DLTs (`ledger.<flow-topic>.dlt`, 17 topics — the chaos machine's deliberately-bad traffic the ledger rejected) into a **single domain-tagged `dlq` table** (Flyway `V16`; rich `DeadLetterTopicRecord` format → error class/reason + retry count + original payload; dedup by topic/partition/offset; best-effort txn-id/type extraction). Adds `GET /api/v0/dlq` (filters: domain / transaction id / transaction type) + `/{id}`, and a **"Dead Letter Queue"** nav item under *Operate* → list → tabbed detail (Overview + Message). Chaos-own consumer DLTs are out of scope (different format), foldable in later behind a `source` discriminator ([ADR-029](decisions/029-dead-letter-queue-projection.md)) |
 | 021 | [Unified Scenario Runner](phases/021-unified-scenario-runner/DESIGN.md) | A frontend-led **information-architecture consolidation** (idea `016_unified_scenario_runner.md`): the **Operate** nav collapses to a single **tabbed Scenario Runner** — *Run Scenario* (today's Single Flow Run), *Run History* (today's "Sent (Chaos History)" tab, now **grouped by run** in an expandable accordion), *DLQ* (today's Dead Letter Queue) — with deep-linkable nested routes + redirects from old paths. Backed by a new read-only **`GET /api/v0/runs`** feed (tracked `batch_run` ∪ correlation-grouped `publish_record`; drill-down via the existing `/history`). **Retires CSV-batch end-to-end** (FE+BE: `POST /batches` upload, `BatchService`, `CsvFlowParser`, the upload + *Batches* list pages) while **preserving** the shared run-tracking infra (`batch_run`, `BatchRunner`, `PacingPlan`, the N-Times/lifecycle/batch-disbursement runners, `GET /batches/{id}`+`/rows`). Also **fixes the broken Transactions Ledger view** by removing the phantom global `GET /ledger/transactions` proxy (no ledger backing) and re-pointing it to a new `GET /ledger/reporting/journal-entries` proxy of the ledger's reconciliation export (global, date-windowed, ~7-day span cap, paged), made the page's main content. **No new tables / Kafka / Flyway migration** ([ADR-030](decisions/030-unified-scenario-runner-navigation.md), [ADR-031](decisions/031-run-grouped-history-and-csv-retirement.md), [ADR-032](decisions/032-ledger-transactions-account-scoped-view.md)) |
+| 022 | [Account Statement Downloads](phases/022-account-statement-downloads/DESIGN.md) | Downloadable **account statements** (CSV/PDF) per virtual account — by **proxying the ledger's own export API**, not building one. Verified in `ss-ledger-service` (its Phases 030/031): a `PUT` creates an export job, a Postgres task queue renders it (OpenPDF / Jackson CSV) from the journal and stream-uploads to **S3**, a `GET` returns status + a freshly-presigned 15-min URL, `DELETE` cancels. So the chaos machine **renders nothing, stores nothing, adds no dependency, and needs no migration** — the [ADR-015](decisions/015-trial-balance-via-ledger-read-proxy.md) trial-balance pattern again ([ADR-033](decisions/033-account-statements-via-ledger-export-proxy.md)). Two twists: it is the proxy's **first command surface** (`PUT`/`DELETE`) → a new `LedgerExportController` (`LedgerReadController` stays read-only) with **faithful status propagation**, because here 400/401/403/404/409 all mean different things and collapsing them to 404 would make a missing export authority, a SYSTEM-account 403, and a cancel-after-complete 409 all read as "not found" ([ADR-035](decisions/035-faithful-status-propagation-on-ledger-command-proxy.md)); and the artifact **streams through the gateway** — chaos fetches the object from S3 server-side and serves it with `Content-Disposition: attachment`, so the presigned URL (an unauthenticated bearer capability) never reaches the browser, upholding [ADR-003](decisions/003-backend-as-single-api-gateway.md) and fixing the inline-PDF / object-key-filename problem a raw S3 link would cause ([ADR-034](decisions/034-gateway-proxied-artifact-download.md)). Surfaced as a **Statements tab** on the VA detail page (request form + bounded-poll export table + download/cancel). **Hard runtime dependency** on a ledger build that has the export API (still an unmerged branch) with its task worker enabled — see open question #18 |
 
-Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013** → **014** → **015** → **016** → **017** → **018** → **019** → **020** → **021**.
+Build order: 001 → 002 → 007 → (003, 004 in parallel) → 005 → 006 → **008** → **(009 ‖ 010)** → **011** → **012** → **013** → **014** → **015** → **016** → **017** → **018** → **019** → **020** → **021** → **022**.
 Phase 007 (formerly `025`, a "phase 2.5" label) slots logically between 002 and 003; 006 verifies
 phases 001–007. Phases 009 and 010 are the latest increment (idea `002_countries_va_via_kafka.md`)
 and run largely in parallel — they converge where the org-VA create form (009) consumes the
@@ -523,6 +545,47 @@ browse (required `from`/`to`, ~7-day span cap, offset-paged) — made the page's
 [ADR-031](decisions/031-run-grouped-history-and-csv-retirement.md),
 [ADR-032](decisions/032-ledger-transactions-account-scoped-view.md)).
 
+Phase 022 (idea `010_account_statements.md`, which was **empty** — requirements settled directly
+with the user) adds **downloadable account statements**, and is the first phase in a while whose
+main design work was *deciding not to build something*. The obvious implementation — walk the
+cursor-paginated journal history, reconstruct an opening balance, render PDF/CSV, add OpenPDF +
+an async job table + a runner — was rejected once `ss-ledger-service` was read: **the ledger
+already exports statements** (its Phases 030/031, on the unmerged `feature/account-statement-exports`
+branch). A `PUT /api/v0/accounts/{id}/transaction-exports` creates a job (201, or **200** joining
+the export already active for the same *resolved* window+format), a Postgres-backed task queue
+renders it on a virtual thread (**OpenPDF** / **Jackson CSV**) from the journal's
+balance-brought-forward witnesses and stream-uploads it to **S3**, `GET /{exportId}` returns the
+status plus a **freshly-presigned 15-minute URL**, and `DELETE` cancels (409 once terminal). Building
+a second statement renderer in the harness would duplicate that work *and* risk producing statements
+that quietly disagree with the ledger's — the one class of bug a ledger test harness must never
+introduce. So Phase 022 is a **pure gateway phase**: no table, no migration, no Kafka, no new
+dependency, nothing persisted — the [ADR-015](decisions/015-trial-balance-via-ledger-read-proxy.md)
+pattern, applied to a capability rather than a report
+([ADR-033](decisions/033-account-statements-via-ledger-export-proxy.md)). Two things make it more
+than a copy of the trial-balance proxy. First, it is the proxy's **first command surface**
+(`PUT`/`DELETE`), so it gets its own `LedgerExportController` — `LedgerReadController` stays
+read-only and honestly named — and it abandons the proxy's blanket
+*every-4xx-becomes-a-`NotFoundException`* translation, which here would render a missing export
+authority (403), a **SYSTEM-account** statement request by a non-super-user (403 — i.e. the entire
+chart of accounts), a cancel-after-complete (409), and an over-366-day window (400) *all* as "not
+found" ([ADR-035](decisions/035-faithful-status-propagation-on-ledger-command-proxy.md); the
+retrofit of the existing read methods is deliberately left as a follow-up). Second, the artifact
+**streams through the gateway**: the presigned URL is an *unauthenticated bearer capability*, the
+S3 object carries a `Content-Type` but **no `Content-Disposition`** (so a browser would render a PDF
+inline and name any download after the raw object key — and the cross-origin `download` attribute is
+ignored), and handing the browser an S3 link would break
+[ADR-003](decisions/003-backend-as-single-api-gateway.md)'s single-gateway invariant *and* require
+the object store to be browser-reachable. So chaos fetches the object server-side — with a dedicated
+client carrying **no auth header and no logging interceptor** (the ledger's never-log rule for the
+URL extends across the gateway) — and streams it back as a real attachment; the chaos-facing DTO has
+**no `downloadUrl` field at all**, so the capability is structurally unable to leak
+([ADR-034](decisions/034-gateway-proxied-artifact-download.md)). The cost accepted in exchange is
+bytes transiting the gateway, which is the right trade for a single-operator harness and the wrong
+one for a production consumer. Surfaced as a **Statements tab** on the VA detail page. The phase's
+real risk is entirely outside the chaos machine: the ledger's export API is **not merged**, and its
+task worker is **off by default** — with the worker off, an export sits `PENDING` forever with no
+error at all (see open question #18).
+
 ## 9. Cross-cutting non-functional posture
 
 - **Resilience (of the harness itself):** idempotent Kafka producer (`acks=all`,
@@ -684,5 +747,38 @@ browse (required `from`/`to`, ~7-day span cap, offset-paged) — made the page's
     format-agnostic, so the chaos-own DLTs can be folded in later behind a `source` discriminator
     (a second format mapping) without a migration. Re-confirm the `DeadLetterTopicRecord` shape /
     topic names if the contract changes.
+
+18. **The statement-export API the chaos machine proxies is on an UNMERGED ledger branch, and its
+    worker is off by default (Phase 022).** Verified in `ss-ledger-service-beta`
+    (`feature/account-statement-exports`, +15.6k lines, not merged to `bitbucket-dev`): the export
+    surface is `PUT|GET|GET|DELETE /api/v0/accounts/{accountId}/transaction-exports`
+    (`format` ∈ CSV|PDF, `rangeType` ∈ DAILY|WEEKLY|MONTHLY|YEARLY|CUSTOM, `from`/`to` as `Instant`,
+    responses camelCase with `LocalDateTime` timestamps, statuses PENDING|IN_PROGRESS|COMPLETED|
+    FAILED|CANCELLED, error codes GENERATION_FAILED|UPLOAD_FAILED|STALE, list envelope
+    `data/page/pageSize/total/pages`, 366-day max window, presign TTL `PT15M`). Four things follow,
+    none of them in the chaos machine's control:
+    (a) **Until that branch merges and deploys, every statement call 404s** — the UI degrades to an
+    explicit "unavailable on the connected ledger" panel rather than an empty table;
+    (b) **`ledger.tasks.worker.enabled` defaults to `false`** — with it off, a `PUT` succeeds and the
+    export sits `PENDING` **forever**, with no error, no timeout, and no failure event. This is the
+    phase's most confusing failure mode and the reason the tab has a bounded poll ceiling that names
+    the flag;
+    (c) the operator's token must carry **`ledger_account_transactions:export::allow`**, and
+    **`*:*::allow`** for SYSTEM accounts — which is the *entire chart of accounts*, since the ledger's
+    org-scope seam resolves SYSTEM accounts to super-user-only. An org-scoped operator gets a 403 on
+    exactly the accounts a chaos operator reaches for first;
+    (d) the ledger's **S3/LocalStack endpoint must be reachable from the chaos backend** (not from the
+    browser — see [ADR-034](decisions/034-gateway-proxied-artifact-download.md)).
+    **Re-verify the field set / enums / paths against the ledger before implementing Phase 022**, and
+    again if the branch changes before merge.
+
+19. **The ledger's `ledger.statement.export.completed` event is specified but NOT implemented
+    (a future Part 5).** The ledger's Phase 031.5 defers it precisely because its Kafka contract with
+    the Notification Service is unfrozen (topic, payload, presigned-URL TTL, expired-link obligation),
+    and its flag defaults off. When it lands, the chaos machine can consume it as a **fifth inbound
+    consumer** — a natural extension of the Phase 017–020 series — replacing Phase 022's client-side
+    poll with a pushed toast. Nothing in Phase 022 is wasted by that: poll-and-download is the primary
+    contract on the ledger's side too, and the event is additive
+    ([ADR-033](decisions/033-account-statements-via-ledger-export-proxy.md)).
 
 These are safe-to-proceed defaults; revise here if the complete MANIFEST / ledger contract differs.

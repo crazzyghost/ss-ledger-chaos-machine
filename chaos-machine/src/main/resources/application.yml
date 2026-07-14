@@ -83,8 +83,8 @@ chaos:
     max-burst: ${CHAOS_LIMITS_MAX_BURST:100}
     max-rate-per-second: ${CHAOS_LIMITS_MAX_RATE_PER_SECOND:1000}
     max-delay-ms: ${CHAOS_LIMITS_MAX_DELAY_MS:30000}
-    max-n-times: ${CHAOS_LIMITS_MAX_N_TIMES:250}
-    max-n-times-sync: ${CHAOS_LIMITS_MAX_N_TIMES_SYNC:25}
+    max-n-times: ${CHAOS_LIMITS_MAX_N_TIMES:50000}
+    max-n-times-sync: ${CHAOS_LIMITS_MAX_N_TIMES_SYNC:50000}
     max-sync-duration-ms: ${CHAOS_LIMITS_MAX_SYNC_DURATION_MS:60000}
   ledger:
     reservation:
@@ -94,6 +94,15 @@ chaos:
       poll:
         interval-ms: ${CHAOS_LEDGER_RESERVATION_POLL_INTERVAL_MS:500}
         timeout-ms: ${CHAOS_LEDGER_RESERVATION_POLL_TIMEOUT_MS:5000}
+  statements:
+    artifact:
+      # The chaos backend's own hop to the ledger's object store (ADR-034). It fetches the
+      # statement server-side and streams it, so the presigned S3 URL never reaches the browser.
+      # A multi-MB transfer needs a far longer read budget than the ledger's JSON reads.
+      connect-ms: ${CHAOS_STATEMENT_ARTIFACT_CONNECT_MS:5000}
+      read-ms: ${CHAOS_STATEMENT_ARTIFACT_READ_MS:60000}
+    # The largest artifact the gateway will relay; a larger one is refused (502), never buffered.
+    max-artifact-bytes: ${CHAOS_STATEMENT_MAX_ARTIFACT_BYTES:52428800} # 50 MiB
   topics:
     organization-onboarded: organization.onboarded
     organization-va-updated: organization.va.updated

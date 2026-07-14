@@ -8,6 +8,7 @@ import { useSession } from "@/features/auth/session-provider";
 import { TransactionsTab } from "@/features/transactions/transactions-page";
 import { BalanceHistoryTab } from "@/features/virtual-accounts/balance-history-tab";
 import { ReservationsTab } from "@/features/virtual-accounts/reservations-tab";
+import { StatementsTab } from "@/features/virtual-accounts/statements-tab";
 import { getLedgerAccount, getLedgerAccountBalances, getVirtualAccount } from "@/lib/api";
 import {
   formatDate,
@@ -389,6 +390,7 @@ export function VirtualAccountDetailPage() {
             <TabsTrigger value="transactions">Transactions</TabsTrigger>
             <TabsTrigger value="balance">Balance</TabsTrigger>
             <TabsTrigger value="reservations">Reservations</TabsTrigger>
+            <TabsTrigger value="statements">Statements</TabsTrigger>
           </TabsList>
           <TabsContent value="overview" className="flex-1 overflow-y-auto p-6 md:p-8">
             {vaId ? <OverviewTab vaId={vaId} /> : null}
@@ -401,6 +403,15 @@ export function VirtualAccountDetailPage() {
           </TabsContent>
           <TabsContent value="reservations" className="flex-1 overflow-y-auto p-6 md:p-8">
             {vaId ? <ReservationsTab vaId={vaId} currency={currency ?? undefined} /> : null}
+          </TabsContent>
+          <TabsContent value="statements" className="flex-1 overflow-y-auto p-6 md:p-8">
+            {vaId ? (
+              <StatementsTab
+                vaId={vaId}
+                accountCode={ledger?.accountCode}
+                ownershipType={ownership}
+              />
+            ) : null}
           </TabsContent>
         </Tabs>
       </PageContent>

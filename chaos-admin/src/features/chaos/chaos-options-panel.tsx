@@ -8,8 +8,8 @@ export const CHAOS_LIMITS = {
   maxBurst: 100,
   maxRatePerSecond: 1000,
   maxDelayMs: 30_000,
-  maxNTimes: 250,
-  maxNTimesSync: 25
+  maxNTimes: 50_000,
+  maxNTimesSync: 50_000
 } as const;
 
 export type ChaosStrategy =

@@ -817,6 +817,38 @@ export type LedgerJournalEntriesFilters = {
   size?: number;
 };
 
+export type ExportFormat = "CSV" | "PDF";
+export type ExportRangeType = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY" | "CUSTOM";
+export type ExportStatus = "PENDING" | "IN_PROGRESS" | "COMPLETED" | "FAILED" | "CANCELLED";
+export type ExportErrorCode = "GENERATION_FAILED" | "UPLOAD_FAILED" | "STALE";
+
+// An account statement export, proxied from the ledger through the chaos gateway. `rangeFrom` is
+// inclusive and `rangeTo` exclusive; both are zoneless ISO local date-times (UTC by convention).
+//
+// There is deliberately NO `downloadUrl` here. The ledger hands the gateway a presigned S3 URL —
+// an unauthenticated bearer capability — and the gateway keeps it server-side, fetching the
+// artifact itself and streaming it back (ADR-034). The browser learns only whether an artifact
+// exists (`downloadable`, true only once COMPLETED) and reaches it through
+// `downloadStatementExport`. The absence of the field is the point: a presigned URL is not merely
+// unused on the client, it is unrepresentable.
+export type TransactionExport = {
+  id: string;
+  accountId: string;
+  status: ExportStatus;
+  format: ExportFormat;
+  rangeType: ExportRangeType;
+  rangeFrom: string;
+  rangeTo: string;
+  downloadable: boolean;
+  errorCode: ExportErrorCode | null;
+  initiatedBy: string | null;
+  initiatedAt: string;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  erroredAt: string | null;
+  createdAt: string;
+};
+
 // ---------------------------------------------------------------------------
 // API functions — Auth
 // ---------------------------------------------------------------------------
@@ -1296,6 +1328,181 @@ export function getAccountReservations(
     `/ledger/accounts/${encodeURIComponent(accountId)}/reservations`,
     { token, query: { transactionRef } }
   );
+}
+
+// ---------------------------------------------------------------------------
+// API functions — Ledger Statement Exports (Phase 021)
+// ---------------------------------------------------------------------------
+
+function statementExportsPath(accountId: string): string {
+  return `/ledger/accounts/${encodeURIComponent(accountId)}/transaction-exports`;
+}
+
+export type CreateStatementExportParams = {
+  format: ExportFormat;
+  rangeType: ExportRangeType;
+  // ISO-8601 instants. Converting the operator's date picks into instants is the caller's job —
+  // the exclusive-`to` convention is a UI decision, and these functions stay dumb about it.
+  from: string;
+  to?: string;
+};
+
+// `created` distinguishes the ledger's 201 (a new export) from its 200 (the caller joined the
+// export already active for that resolved window + format). Two different things to tell an
+// operator, so the status code is read directly — the shared `request` helper hides it, exactly as
+// it does for `publishNTimes`.
+export type CreateStatementExportResult = {
+  created: boolean;
+  export: TransactionExport;
+};
+
+// Requests a statement export. Mirrors the ledger's contract: a PUT whose every parameter is a
+// query param and which carries no body — so no Content-Type header is set here.
+export async function createStatementExport(
+  token: string,
+  accountId: string,
+  params: CreateStatementExportParams
+): Promise<CreateStatementExportResult> {
+  const url = buildUrl(appConfig.apiBaseUrl, statementExportsPath(accountId), {
+    format: params.format,
+    rangeType: params.rangeType,
+    from: params.from,
+    to: params.to
+  });
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  if (!response.ok) {
+    const message = await safeJsonMessage(response);
+    if (response.status === 401) _onUnauthorized?.();
+    throw new ApiError(response.status, message);
+  }
+
+  const text = await response.text();
+  const data = (text.trim() ? JSON.parse(text) : {}) as TransactionExport;
+  return { created: response.status === 201, export: data };
+}
+
+export function getStatementExport(
+  token: string,
+  accountId: string,
+  exportId: string
+): Promise<TransactionExport> {
+  return request<TransactionExport>(
+    `${statementExportsPath(accountId)}/${encodeURIComponent(exportId)}`,
+    { token }
+  );
+}
+
+export type StatementExportFilters = {
+  status?: ExportStatus;
+  format?: ExportFormat;
+  page?: number;
+  // The ledger's own param name (and its cap of 100) — forwarded unclamped, so an over-cap value
+  // comes back as the ledger's 400 rather than being silently rewritten here.
+  pageSize?: number;
+};
+
+// Lists an account's exports, newest first.
+export function listStatementExports(
+  token: string,
+  accountId: string,
+  filters: StatementExportFilters = {}
+): Promise<PageResponse<TransactionExport>> {
+  const { page = 0, pageSize = 20, ...rest } = filters;
+  return request<PageResponse<TransactionExport>>(statementExportsPath(accountId), {
+    token,
+    query: { page, pageSize, ...rest }
+  });
+}
+
+// Cancels a PENDING or IN_PROGRESS export. An export that has already finished comes back as a 409
+// (an ApiError with the ledger's message), not a silent no-op — the row is right there on screen.
+export function cancelStatementExport(
+  token: string,
+  accountId: string,
+  exportId: string
+): Promise<TransactionExport> {
+  return request<TransactionExport>(
+    `${statementExportsPath(accountId)}/${encodeURIComponent(exportId)}`,
+    { token, method: "DELETE" }
+  );
+}
+
+// Reads the filename the backend chose, handling both the plain and RFC 5987 (`filename*=UTF-8''…`)
+// forms. A header we cannot parse degrades the filename, never the download.
+function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8?.[1]) {
+    try {
+      return decodeURIComponent(utf8[1]);
+    } catch {
+      // Fall through to the plain form below.
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1] ?? null;
+}
+
+const EXTENSION_BY_CONTENT_TYPE: Record<string, string> = {
+  "application/pdf": "pdf",
+  "text/csv": "csv"
+};
+
+function fallbackFilename(exportId: string, contentType: string | null): string {
+  const mime = (contentType ?? "").split(";")[0].trim().toLowerCase();
+  const extension = EXTENSION_BY_CONTENT_TYPE[mime];
+  return extension ? `statement-${exportId}.${extension}` : `statement-${exportId}`;
+}
+
+// Downloads a completed statement and saves it to disk.
+//
+// This is the only call in the app that saves bytes the *server* produced, so it cannot use the
+// shared `request` helper — that always reads `response.text()` and never looks at
+// `Content-Disposition`, so it structurally cannot return a file. Like `publishNTimes`, this drops
+// to a raw fetch while reusing the same auth, error, and 401-sign-out behaviour. Do not "unify"
+// this into `request` behind a `responseType: "blob"` flag: that would make the declared return
+// type a lie at every other call site for the sake of this one.
+//
+// The `res.ok` check precedes `res.blob()` unconditionally, so a 4xx/5xx raises an ApiError with
+// the backend's message and saves nothing — the operator never opens a `statement.pdf` and finds a
+// JSON error inside it. The artifact is same-origin (the chaos gateway streams it — ADR-031), which
+// is what makes the anchor's `download` attribute honoured at all; it is ignored cross-origin, so a
+// presigned S3 link could not have forced either the save or the filename.
+export async function downloadStatementExport(
+  token: string,
+  accountId: string,
+  exportId: string
+): Promise<void> {
+  const url = buildUrl(
+    appConfig.apiBaseUrl,
+    `${statementExportsPath(accountId)}/${encodeURIComponent(exportId)}/download`
+  );
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+
+  if (!response.ok) {
+    const message = await safeJsonMessage(response);
+    if (response.status === 401) _onUnauthorized?.();
+    throw new ApiError(response.status, message);
+  }
+
+  const filename =
+    filenameFromContentDisposition(response.headers.get("Content-Disposition")) ??
+    fallbackFilename(exportId, response.headers.get("Content-Type"));
+
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }
 
 // Fetches the ledger's disbursement batch summary by `batchId` (reservation_id + status + counters),
