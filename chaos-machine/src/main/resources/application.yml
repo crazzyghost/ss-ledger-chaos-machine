@@ -102,7 +102,7 @@ chaos:
       connect-ms: ${CHAOS_STATEMENT_ARTIFACT_CONNECT_MS:5000}
       read-ms: ${CHAOS_STATEMENT_ARTIFACT_READ_MS:60000}
     # The largest artifact the gateway will relay; a larger one is refused (502), never buffered.
-    max-artifact-bytes: ${CHAOS_STATEMENT_MAX_ARTIFACT_BYTES:52428800} # 50 MiB
+    max-artifact-bytes: ${CHAOS_STATEMENT_MAX_ARTIFACT_BYTES:104857600} # 100 MiB
   topics:
     organization-onboarded: organization.onboarded
     organization-va-updated: organization.va.updated

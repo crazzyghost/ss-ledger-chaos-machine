@@ -74,7 +74,7 @@ function useReconciliationMismatchPoller() {
   const pollQuery = useQuery({
     queryKey: ["reconciliation-mismatches", lastPollTime],
     queryFn: () => pollReconciliationMismatches(token!, lastPollTime),
-    refetchInterval: isEnabled ? 5000 : false,
+    refetchInterval: isEnabled ? 500 : false,
     enabled: isEnabled && !!token
   });
 
@@ -84,7 +84,7 @@ function useReconciliationMismatchPoller() {
         toast.error(`Consistency check ${formatEnumValue(mismatch.type)} found ${mismatch.discrepancyCount} issue(s)`, {
           action: {
             label: "View",
-            onClick: () => navigate(`/ledger/consistency-checks/${mismatch.checkId}`)
+            onClick: () => navigate(`/consistency-checks/${mismatch.checkId}`)
           },
           duration: 10000
         });
@@ -280,11 +280,11 @@ export function ConsistencyChecksPage() {
                       <TR
                         key={check.checkId}
                         className="cursor-pointer hover:bg-muted/50"
-                        onClick={() => navigate(`/ledger/consistency-checks/${check.checkId}`)}
+                        onClick={() => navigate(`/consistency-checks/${check.checkId}`)}
                       >
                         <TD className="font-mono text-xs">
                           <Link
-                            to={`/ledger/consistency-checks/${check.checkId}`}
+                            to={`/consistency-checks/${check.checkId}`}
                             className="text-primary hover:underline"
                             onClick={e => e.stopPropagation()}
                           >

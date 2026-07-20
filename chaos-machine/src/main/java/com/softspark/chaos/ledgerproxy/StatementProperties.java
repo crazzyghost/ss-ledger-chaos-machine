@@ -12,12 +12,12 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * {@code ledger.timeouts.*}.
  *
  * @param artifact timeouts for the server-side fetch of the artifact from the object store
- * @param maxArtifactBytes the largest artifact the gateway will relay (default 50 MiB); a larger one
+ * @param maxArtifactBytes the largest artifact the gateway will relay (default 100 MiB); a larger one
  *     is refused rather than buffered, so a pathological ledger artifact cannot exhaust the harness
  */
 @ConfigurationProperties(prefix = "chaos.statements")
 public record StatementProperties(
-    @DefaultValue Artifact artifact, @DefaultValue("52428800") long maxArtifactBytes) {
+    @DefaultValue Artifact artifact, @DefaultValue("104857600") long maxArtifactBytes) {
 
   /**
    * Timeouts for the object-store hop.

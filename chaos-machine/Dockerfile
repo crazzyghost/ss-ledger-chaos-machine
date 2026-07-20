@@ -7,7 +7,9 @@ COPY gradle gradle
 COPY gradlew build.gradle settings.gradle ./
 COPY src src
 
-RUN ./gradlew build -x test --no-daemon
+# bootJar (not `build`) so the container build compiles + packages the runnable jar
+# without the Spotless/check lint gate — matches ss-ledger-service's Dockerfile.
+RUN ./gradlew bootJar -x test --no-daemon
 
 # Runtime stage
 FROM eclipse-temurin:25-jre

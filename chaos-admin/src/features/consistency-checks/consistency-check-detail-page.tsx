@@ -107,7 +107,7 @@ export function ConsistencyCheckDetailPage() {
     Date.now() - new Date(check.initiatedAt).getTime() > 30000;
 
   const backButton = (
-    <Button variant="ghost" size="sm" onClick={() => navigate("/ledger/consistency-checks")}>
+    <Button variant="ghost" size="sm" onClick={() => navigate("/consistency-checks")}>
       <ArrowLeft className="mr-1.5 h-4 w-4" />
       Back to list
     </Button>
@@ -164,7 +164,7 @@ export function ConsistencyCheckDetailPage() {
             icon="error"
             action={<Button onClick={() => void checkQuery.refetch()}>Retry</Button>}
             secondaryAction={
-              <Button variant="ghost" onClick={() => navigate("/ledger/consistency-checks")}>
+              <Button variant="ghost" onClick={() => navigate("/consistency-checks")}>
                 Back to list
               </Button>
             }
@@ -174,7 +174,7 @@ export function ConsistencyCheckDetailPage() {
             title="Check not found"
             description="It may have been deleted or never existed."
             action={
-              <Button onClick={() => navigate("/ledger/consistency-checks")}>Back to list</Button>
+              <Button onClick={() => navigate("/consistency-checks")}>Back to list</Button>
             }
           />
         ) : (

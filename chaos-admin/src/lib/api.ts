@@ -70,7 +70,7 @@ async function safeJsonMessage(res: Response): Promise<string> {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   options?: {
     token?: string;

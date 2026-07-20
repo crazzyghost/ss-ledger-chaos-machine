@@ -223,11 +223,11 @@ export const router = createBrowserRouter([
             element: withSuspense(<TrialBalancePage />)
           },
           {
-            path: "/ledger/consistency-checks",
+            path: "/consistency-checks",
             element: withSuspense(<ConsistencyChecksPage />)
           },
           {
-            path: "/ledger/consistency-checks/:checkId",
+            path: "/consistency-checks/:checkId",
             element: withSuspense(<ConsistencyCheckDetailPage />)
           }
         ]
