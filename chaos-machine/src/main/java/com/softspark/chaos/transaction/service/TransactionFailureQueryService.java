@@ -53,7 +53,8 @@ public class TransactionFailureQueryService {
         (root, criteria, cb) -> {
           List<Predicate> predicates = new ArrayList<>();
           if (query.transactionRequestId() != null) {
-            predicates.add(cb.equal(root.get("transactionRequestId"), query.transactionRequestId()));
+            predicates.add(
+                cb.equal(root.get("transactionRequestId"), query.transactionRequestId()));
           }
           if (query.transactionType() != null) {
             predicates.add(cb.equal(root.get("transactionType"), query.transactionType()));

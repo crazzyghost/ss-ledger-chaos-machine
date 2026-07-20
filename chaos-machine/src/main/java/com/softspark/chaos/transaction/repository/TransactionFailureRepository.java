@@ -16,7 +16,8 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public interface TransactionFailureRepository
-    extends JpaRepository<TransactionFailure, String>, JpaSpecificationExecutor<TransactionFailure> {
+    extends JpaRepository<TransactionFailure, String>,
+        JpaSpecificationExecutor<TransactionFailure> {
 
   boolean existsByEventId(String eventId);
 

@@ -38,6 +38,16 @@ const TrialBalancePage = lazy(() =>
     default: m.TrialBalancePage
   }))
 );
+const ConsistencyChecksPage = lazy(() =>
+  import("@/features/consistency-checks/consistency-checks-page").then(m => ({
+    default: m.ConsistencyChecksPage
+  }))
+);
+const ConsistencyCheckDetailPage = lazy(() =>
+  import("@/features/consistency-checks/consistency-check-detail-page").then(m => ({
+    default: m.ConsistencyCheckDetailPage
+  }))
+);
 const SingleFlowPage = lazy(() =>
   import("@/features/chaos/single-flow-page").then(m => ({ default: m.SingleFlowPage }))
 );
@@ -211,6 +221,14 @@ export const router = createBrowserRouter([
           {
             path: "/trial-balance",
             element: withSuspense(<TrialBalancePage />)
+          },
+          {
+            path: "/ledger/consistency-checks",
+            element: withSuspense(<ConsistencyChecksPage />)
+          },
+          {
+            path: "/ledger/consistency-checks/:checkId",
+            element: withSuspense(<ConsistencyCheckDetailPage />)
           }
         ]
       }

@@ -87,8 +87,7 @@ public class BalanceHistoryProjectionService {
 
     try {
       repository.save(entity);
-      log.debug(
-          "Projected balance update account={} seq={}", accountId, data.lastEntrySequence());
+      log.debug("Projected balance update account={} seq={}", accountId, data.lastEntrySequence());
     } catch (DataIntegrityViolationException e) {
       log.debug("Concurrent duplicate balance event {} — already projected", eventId);
     }

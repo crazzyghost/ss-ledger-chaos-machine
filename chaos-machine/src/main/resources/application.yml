@@ -123,6 +123,7 @@ chaos:
     ledger-balance-updated: ${CHAOS_LEDGER_BALANCE_UPDATED_TOPIC:ledger.balance.updated}
     ledger-reservation-created: ${CHAOS_LEDGER_RESERVATION_CREATED_TOPIC:ledger.reservation.created}
     ledger-reservation-released: ${CHAOS_LEDGER_RESERVATION_RELEASED_TOPIC:ledger.reservation.released}
+    ledger-reconciliation-mismatch: ${CHAOS_LEDGER_RECONCILIATION_MISMATCH_TOPIC:ledger.reconciliation.mismatch}
   bootstrap:
     reconcile-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_DELAY_MS:60000}
     reconcile-initial-delay-ms: ${CHAOS_BOOTSTRAP_RECONCILE_INITIAL_DELAY_MS:30000}

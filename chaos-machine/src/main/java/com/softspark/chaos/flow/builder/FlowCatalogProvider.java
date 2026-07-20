@@ -330,7 +330,11 @@ public class FlowCatalogProvider {
                 "provider_id",
                 "merchant_ref_id",
                 "failure_reason"),
-            List.of("currency", "disbursement_subtype", "failure_code", "failed_at",
+            List.of(
+                "currency",
+                "disbursement_subtype",
+                "failure_code",
+                "failed_at",
                 "provider_reference_id"),
             List.of(
                 "transaction_id",
@@ -614,7 +618,9 @@ public class FlowCatalogProvider {
     fields.add(vaRef("source_va_id", "Source VA (Float)", AccountKind.SYSTEM, "source"));
     fields.add(
         vaRef(
-            "destination_va_id", "Destination VA (Organization)", AccountKind.ORGANIZATION,
+            "destination_va_id",
+            "Destination VA (Organization)",
+            AccountKind.ORGANIZATION,
             "destination"));
     fields.add(amountField("amount", "Net Amount", DEFAULT_AMOUNT));
     fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
@@ -633,14 +639,16 @@ public class FlowCatalogProvider {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(uuid("transaction_id", "Transaction ID"));
     fields.add(
-        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlow(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
     fields.add(amountField("fee_amount", "Fee Amount", "10"));
     fields.add(advInferred("merchant_id", "Merchant ID", InferenceRule.ORG_FROM_SOURCE_VA));
     fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
     fields.add(advUlid("narration", "Narration"));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
-    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(advText("credit_account_id", "Credit Account ID", DEFAULT_CREDIT_ACCOUNT));
     fields.add(advText("credit_provider_id", "Credit Provider ID", DEFAULT_PROVIDER));
     fields.add(country("source_country", "Source Country", DEFAULT_COUNTRY));
@@ -660,9 +668,11 @@ public class FlowCatalogProvider {
   private List<FlowFieldDescriptor> disbursementCompletedFields() {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(uuid("transaction_id", "Transaction ID"));
-    fields.add(vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
     fields.add(
-        vaRef("destination_va_id", "Destination VA (Settlement)", AccountKind.SYSTEM, "destination"));
+        vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
+    fields.add(
+        vaRef(
+            "destination_va_id", "Destination VA (Settlement)", AccountKind.SYSTEM, "destination"));
     fields.add(reservationField("reservation_id", "Reservation ID"));
     fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
     fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
@@ -670,7 +680,8 @@ public class FlowCatalogProvider {
     fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
     fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
-    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(advText("recipient_reference", "Recipient Reference", null));
     fields.add(advText("destination_country", "Destination Country", null));
     fields.add(advText("corridor", "Corridor", null));
@@ -684,13 +695,15 @@ public class FlowCatalogProvider {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(uuid("transaction_id", "Transaction ID"));
     fields.add(
-        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlow(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(reservationField("reservation_id", "Reservation ID"));
     fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
     fields.add(reqText("failure_reason", "Failure Reason", "Disbursement failed"));
     fields.add(advUlid("merchant_ref_id", "Merchant Reference ID"));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
-    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(
         advSelect("failure_code", "Failure Code", "PROVIDER_REJECTED", DISBURSEMENT_FAILURE_CODES));
     fields.add(advDateTime("failed_at", "Failed At"));
@@ -702,15 +715,19 @@ public class FlowCatalogProvider {
   /** Batch reservation: step 1 (mints batch_id; org VA reservation for total_amount). */
   private List<FlowFieldDescriptor> batchReservationFields() {
     var fields = new ArrayList<FlowFieldDescriptor>();
-    fields.add(vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
+    fields.add(
+        vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
     fields.add(
         vaRef(
-            "destination_va_id", "Destination VA (Platform Float)", AccountKind.SYSTEM,
+            "destination_va_id",
+            "Destination VA (Platform Float)",
+            AccountKind.SYSTEM,
             "destination"));
     fields.add(amountField("total_principal_amount", "Total Principal Amount", DEFAULT_AMOUNT));
     fields.add(amountField("total_fees", "Total Fees", DEFAULT_BATCH_FEES));
     fields.add(integer("item_count", "Item Count (N)", DEFAULT_ITEM_COUNT));
-    fields.add(reqSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        reqSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(advUuid("batch_id", "Batch ID"));
     fields.add(advUuid("batch_correlation_id", "Batch Correlation ID"));
     fields.add(advUlid("merchant_batch_ref", "Merchant Batch Reference"));
@@ -730,7 +747,8 @@ public class FlowCatalogProvider {
     fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
     fields.add(amountField("item_fee", "Item Fee", DEFAULT_BATCH_FEES));
     fields.add(
-        vaRefFlowAdv("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlowAdv(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(advText("credit_provider_id", "Credit Provider ID", DEFAULT_PROVIDER));
     fields.add(advText("credit_account_id", "Credit Account ID", DEFAULT_CREDIT_ACCOUNT));
     fields.add(advUuid("item_id", "Item ID"));
@@ -740,7 +758,8 @@ public class FlowCatalogProvider {
     fields.add(advUuid("batch_correlation_id", "Batch Correlation ID"));
     fields.add(advText("merchant_id", "Merchant ID", null));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
-    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(country("source_country", "Source Country", DEFAULT_COUNTRY));
     fields.add(country("destination_country", "Destination Country", DEFAULT_COUNTRY));
     fields.add(derivedCorridor());
@@ -753,7 +772,8 @@ public class FlowCatalogProvider {
   private List<FlowFieldDescriptor> batchItemCompletedFields() {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(
-        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlow(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(reservationField("reservation_id", "Reservation ID"));
     fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
     fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
@@ -761,7 +781,8 @@ public class FlowCatalogProvider {
     fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
     fields.add(advUlid("merchant_item_ref", "Merchant Item Reference"));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
-    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(advText("recipient_reference", "Recipient Reference", null));
     fields.add(advText("destination_country", "Destination Country", null));
     fields.add(advText("corridor", "Corridor", null));
@@ -777,7 +798,8 @@ public class FlowCatalogProvider {
   private List<FlowFieldDescriptor> batchItemFailedFields() {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(
-        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlow(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(reservationField("reservation_id", "Reservation ID"));
     fields.add(amountField("principal_amount", "Principal Amount", DEFAULT_AMOUNT));
     fields.add(feeList("fees", "Fees", AccountKind.SYSTEM));
@@ -787,7 +809,8 @@ public class FlowCatalogProvider {
     fields.add(advUlid("provider_reference_id", "Provider Reference ID"));
     fields.add(advUlid("merchant_item_ref", "Merchant Item Reference"));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
-    fields.add(advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
+    fields.add(
+        advSelect("disbursement_subtype", "Disbursement Subtype", "DOMESTIC", SUBTYPE_OPTIONS));
     fields.add(advDateTime("failed_at", "Failed At"));
     fields.add(integerAdv("item_sequence", "Item Sequence"));
     fields.add(advUuid("batch_id", "Batch ID"));
@@ -800,7 +823,8 @@ public class FlowCatalogProvider {
     var fields = new ArrayList<FlowFieldDescriptor>();
     fields.add(uuid("settlement_request_id", "Settlement Request ID"));
     fields.add(
-        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlow(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(amountField("amount", "Amount", DEFAULT_AMOUNT));
     fields.add(advInferred("organization_id", "Organization ID", InferenceRule.ORG_FROM_SOURCE_VA));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
@@ -819,10 +843,13 @@ public class FlowCatalogProvider {
     fields.add(
         advInferred(
             "source_organization_id", "Source Organization ID", InferenceRule.ORG_FROM_SOURCE_VA));
-    fields.add(vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
+    fields.add(
+        vaRef("source_va_id", "Source VA (Organization)", AccountKind.ORGANIZATION, "source"));
     fields.add(
         vaRef(
-            "settlement_va_id", "Settlement VA (Settlement Account)", AccountKind.SYSTEM,
+            "settlement_va_id",
+            "Settlement VA (Settlement Account)",
+            AccountKind.SYSTEM,
             "destination"));
     fields.add(amountField("amount", "Amount", DEFAULT_AMOUNT));
     fields.add(advInferred("currency", "Currency", InferenceRule.CURRENCY_FROM_SOURCE_VA));
@@ -838,10 +865,14 @@ public class FlowCatalogProvider {
     fields.add(uuid("settlement_request_id", "Settlement Request ID"));
     fields.add(advInferred("organization_id", "Organization ID", InferenceRule.ORG_FROM_SOURCE_VA));
     fields.add(
-        vaRefFlow("virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
+        vaRefFlow(
+            "virtual_account_id", "Virtual Account (Organization)", AccountKind.ORGANIZATION));
     fields.add(
         reqSelect(
-            "failure_reason_code", "Failure Reason Code", "BANK_REJECTED", SETTLEMENT_FAILURE_CODES));
+            "failure_reason_code",
+            "Failure Reason Code",
+            "BANK_REJECTED",
+            SETTLEMENT_FAILURE_CODES));
     fields.add(reqText("failure_note", "Failure Note", "Settlement failed"));
     fields.add(vaRefFlowAdv("destination_va_id", "Destination VA", AccountKind.SYSTEM));
     fields.add(advText("marked_by", "Marked By", DEFAULT_ACTOR));
@@ -912,7 +943,9 @@ public class FlowCatalogProvider {
   }
 
   private static FlowFieldDescriptor amount() {
-    return base("amount", "Amount", FieldKind.AMOUNT, true, false).defaultValue(DEFAULT_AMOUNT).build();
+    return base("amount", "Amount", FieldKind.AMOUNT, true, false)
+        .defaultValue(DEFAULT_AMOUNT)
+        .build();
   }
 
   private static FlowFieldDescriptor amountField(String name, String label, String defaultValue) {
@@ -943,7 +976,8 @@ public class FlowCatalogProvider {
     return base(name, label, FieldKind.TEXT, false, true).inference(rule).build();
   }
 
-  private static FlowFieldDescriptor advText(String name, String label, @Nullable String defaultValue) {
+  private static FlowFieldDescriptor advText(
+      String name, String label, @Nullable String defaultValue) {
     return base(name, label, FieldKind.TEXT, false, true).defaultValue(defaultValue).build();
   }
 

@@ -23,8 +23,18 @@ class ReservationLookupTest {
 
   private ReservationResponse reservation(String id, String ref) {
     return new ReservationResponse(
-        id, "VA-ORG", ref, "SINGLE", "ACTIVE", new BigDecimal("100"), BigDecimal.ZERO,
-        BigDecimal.ZERO, null, null, null, null);
+        id,
+        "VA-ORG",
+        ref,
+        "SINGLE",
+        "ACTIVE",
+        new BigDecimal("100"),
+        BigDecimal.ZERO,
+        BigDecimal.ZERO,
+        null,
+        null,
+        null,
+        null);
   }
 
   @Test
@@ -39,8 +49,7 @@ class ReservationLookupTest {
   @Test
   void should_returnEmpty_when_neverAppearsBeforeTimeout() {
     var lookup = new ReservationLookup(ledgerClient, 5L, 30L);
-    when(ledgerClient.getReservations(anyString(), anyString(), anyString()))
-        .thenReturn(List.of());
+    when(ledgerClient.getReservations(anyString(), anyString(), anyString())).thenReturn(List.of());
 
     assertThat(lookup.find("", "VA-ORG", "TX-1", Duration.ofMillis(30))).isEmpty();
   }

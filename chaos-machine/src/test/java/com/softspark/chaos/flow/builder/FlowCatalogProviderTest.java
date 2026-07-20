@@ -28,10 +28,7 @@ class FlowCatalogProviderTest {
   private final FlowCatalogProvider provider = new FlowCatalogProvider(new TopicCatalog());
 
   private FlowCatalogEntry entry(FlowType type) {
-    return provider.catalog().stream()
-        .filter(e -> e.flowType() == type)
-        .findFirst()
-        .orElseThrow();
+    return provider.catalog().stream().filter(e -> e.flowType() == type).findFirst().orElseThrow();
   }
 
   @Test

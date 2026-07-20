@@ -25,25 +25,29 @@ class BatchOutcomePlanTest {
 
   @Test
   void should_passAll_when_allPass() {
-    boolean[] pass = BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.ALL_PASS, null, null), 5, decider, 1L);
+    boolean[] pass =
+        BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.ALL_PASS, null, null), 5, decider, 1L);
     assertThat(countPasses(pass)).isEqualTo(5);
   }
 
   @Test
   void should_failAll_when_allFail() {
-    boolean[] pass = BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.ALL_FAIL, null, null), 5, decider, 1L);
+    boolean[] pass =
+        BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.ALL_FAIL, null, null), 5, decider, 1L);
     assertThat(countPasses(pass)).isZero();
   }
 
   @Test
   void should_passFirstK_when_countMode() {
-    boolean[] pass = BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.COUNT, 3, null), 5, decider, 1L);
+    boolean[] pass =
+        BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.COUNT, 3, null), 5, decider, 1L);
     assertThat(pass).containsExactly(true, true, true, false, false);
   }
 
   @Test
   void should_hitTargetExactly_when_randomWithPassCount() {
-    boolean[] pass = BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.RANDOM, 4, 42L), 10, decider, 42L);
+    boolean[] pass =
+        BatchOutcomePlan.decide(new BatchOutcomePolicy(Mode.RANDOM, 4, 42L), 10, decider, 42L);
     assertThat(countPasses(pass)).isEqualTo(4);
   }
 

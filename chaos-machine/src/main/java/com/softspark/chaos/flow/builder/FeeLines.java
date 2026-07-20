@@ -52,8 +52,6 @@ final class FeeLines {
    * @return the total fee amount ({@link BigDecimal#ZERO} for an empty list)
    */
   static BigDecimal sum(List<TransactionFeeLine> lines) {
-    return lines.stream()
-        .map(TransactionFeeLine::amount)
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
+    return lines.stream().map(TransactionFeeLine::amount).reduce(BigDecimal.ZERO, BigDecimal::add);
   }
 }

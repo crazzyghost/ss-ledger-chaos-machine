@@ -3,3 +3,5 @@
 ss-ledger-service
 swift-admin
 .vscode/
+data/*
+!data/.gitkeep

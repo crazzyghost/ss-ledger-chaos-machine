@@ -104,7 +104,8 @@ public class ReservationQueryService {
     if (transactionRef != null && !transactionRef.isBlank()) {
       var rows =
           repository.findByTransactionId(transactionRef).stream()
-              .filter(r -> status == null || status.isBlank() || status.equalsIgnoreCase(r.getStatus()))
+              .filter(
+                  r -> status == null || status.isBlank() || status.equalsIgnoreCase(r.getStatus()))
               .sorted(Comparator.comparing(Reservation::getUpdatedAt).reversed())
               .map(ReservationStateResponse::from)
               .toList();

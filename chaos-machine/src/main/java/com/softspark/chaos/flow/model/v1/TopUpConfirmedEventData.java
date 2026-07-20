@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import io.soabase.recordbuilder.core.RecordBuilder;
 import java.math.BigDecimal;
-import java.util.UUID;
 
 /**
  * Event data for organization.topup.confirmed events.

@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.softspark.chaos.flow.model.FlowType;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 
 /** Unit tests for {@link TopicCatalog} topic resolution and DLT derivation (ADR-024). */
 @DisplayName("TopicCatalog")

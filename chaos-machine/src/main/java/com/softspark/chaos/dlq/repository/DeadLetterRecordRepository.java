@@ -14,5 +14,6 @@ import org.springframework.stereotype.Repository;
 public interface DeadLetterRecordRepository
     extends JpaRepository<DeadLetterRecord, String>, JpaSpecificationExecutor<DeadLetterRecord> {
 
-  boolean existsByDltTopicAndDltPartitionAndDltOffset(String dltTopic, int dltPartition, long dltOffset);
+  boolean existsByDltTopicAndDltPartitionAndDltOffset(
+      String dltTopic, int dltPartition, long dltOffset);
 }

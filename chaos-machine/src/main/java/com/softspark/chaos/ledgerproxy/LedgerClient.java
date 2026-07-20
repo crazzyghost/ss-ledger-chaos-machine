@@ -9,6 +9,9 @@ import com.softspark.chaos.ledgerproxy.dto.BatchBalanceListDto;
 import com.softspark.chaos.ledgerproxy.dto.DisbursementBatchSummaryDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerAccountDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerBalanceDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerConsistencyCheckDiscrepancyDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerConsistencyCheckDto;
+import com.softspark.chaos.ledgerproxy.dto.LedgerConsistencyCheckTriggerDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerCursorPageDto;
 import com.softspark.chaos.ledgerproxy.dto.LedgerExportResult;
 import com.softspark.chaos.ledgerproxy.dto.LedgerPageDto;
@@ -800,6 +803,202 @@ public class LedgerClient {
                       throw LedgerStatusPropagation.toChaosException(req, resp);
                     })
                 .body(LedgerTransactionExportDto.class));
+  }
+
+  /**
+   * Triggers one or all consistency checks on the ledger.
+   *
+   * <p>Proxies {@code PUT /api/v0/consistency-checks?type=}. When {@code type=ALL}, the ledger
+   * creates three checks (one per type); otherwise it creates one. Each check is initially {@code
+   * PENDING} and processed asynchronously by the ledger's task queue.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param type the check type ({@code ALL}, {@code ACCOUNT_BALANCE_PROJECTION}, {@code
+   *     ENTRY_BALANCE}, {@code SEQUENCE_INTEGRITY}), or {@code null} (defaults to {@code ALL})
+   * @return the trigger response (list of triggered checks)
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerConsistencyCheckTriggerDto triggerConsistencyChecks(
+      String callerToken, @Nullable String type) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .put()
+                .uri(
+                    uriBuilder -> {
+                      var builder = uriBuilder.path("/api/v0/consistency-checks");
+                      if (type != null && !type.isBlank()) {
+                        builder = builder.queryParam("type", type);
+                      }
+                      return builder.build();
+                    })
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(LedgerConsistencyCheckTriggerDto.class));
+  }
+
+  /**
+   * Lists consistency checks from the ledger with optional filters.
+   *
+   * <p>Proxies {@code GET /api/v0/consistency-checks?type=&status=&initiatorType=&page=&size=}.
+   * All filters are optional; the ledger returns checks newest-first.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param type optional filter by check type
+   * @param status optional filter by status
+   * @param initiatorType optional filter by initiator type
+   * @param page zero-based page number
+   * @param size page size
+   * @return a paginated list of consistency checks
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerPageDto<LedgerConsistencyCheckDto> listConsistencyChecks(
+      String callerToken,
+      @Nullable String type,
+      @Nullable String status,
+      @Nullable String initiatorType,
+      int page,
+      int size) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri(
+                    uriBuilder -> {
+                      var builder =
+                          uriBuilder
+                              .path("/api/v0/consistency-checks")
+                              .queryParam("page", page)
+                              .queryParam("size", size);
+                      if (type != null && !type.isBlank()) {
+                        builder = builder.queryParam("type", type);
+                      }
+                      if (status != null && !status.isBlank()) {
+                        builder = builder.queryParam("status", status);
+                      }
+                      if (initiatorType != null && !initiatorType.isBlank()) {
+                        builder = builder.queryParam("initiatorType", initiatorType);
+                      }
+                      return builder.build();
+                    })
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(
+                    new ParameterizedTypeReference<LedgerPageDto<LedgerConsistencyCheckDto>>() {}));
+  }
+
+  /**
+   * Retrieves a single consistency check from the ledger.
+   *
+   * <p>Proxies {@code GET /api/v0/consistency-checks/{checkId}}.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param checkId the check ID
+   * @return the consistency check
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerConsistencyCheckDto getConsistencyCheck(String callerToken, String checkId) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri("/api/v0/consistency-checks/{checkId}", checkId)
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(LedgerConsistencyCheckDto.class));
+  }
+
+  /**
+   * Lists discrepancies (findings) for a single consistency check with optional code filter.
+   *
+   * <p>Proxies {@code GET /api/v0/consistency-checks/{checkId}/discrepancies?code=&page=&size=}.
+   * The {@code code} filter is optional; the ledger returns findings ordered by detection time.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param checkId the check ID
+   * @param code optional filter by discrepancy code
+   * @param page zero-based page number
+   * @param size page size
+   * @return a paginated list of discrepancies
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public LedgerPageDto<LedgerConsistencyCheckDiscrepancyDto> listConsistencyCheckDiscrepancies(
+      String callerToken, String checkId, @Nullable String code, int page, int size) {
+    var token = resolveToken(callerToken);
+    return circuitBreaker.execute(
+        () ->
+            restClient
+                .get()
+                .uri(
+                    uriBuilder -> {
+                      var builder =
+                          uriBuilder
+                              .path("/api/v0/consistency-checks/{checkId}/discrepancies")
+                              .queryParam("page", page)
+                              .queryParam("size", size);
+                      if (code != null && !code.isBlank()) {
+                        builder = builder.queryParam("code", code);
+                      }
+                      return builder.build(checkId);
+                    })
+                .header("Authorization", "Bearer " + token)
+                .retrieve()
+                .onStatus(
+                    HttpStatusCode::isError,
+                    (req, resp) -> {
+                      throw LedgerStatusPropagation.toChaosException(req, resp);
+                    })
+                .body(
+                    new ParameterizedTypeReference<
+                        LedgerPageDto<LedgerConsistencyCheckDiscrepancyDto>>() {}));
+  }
+
+  /**
+   * Cancels a running or pending consistency check.
+   *
+   * <p>Proxies {@code DELETE /api/v0/consistency-checks/{checkId}}. The ledger will attempt to
+   * cancel the check if it is still {@code PENDING} or {@code IN_PROGRESS}. If the check has
+   * already completed or failed, the ledger returns an appropriate error status.
+   *
+   * @param callerToken the caller's bearer token (forwarded or replaced by service token)
+   * @param checkId the check ID to cancel
+   * @throws CircuitBreakerOpenException if the circuit is open
+   */
+  public void cancelConsistencyCheck(String callerToken, String checkId) {
+    var token = resolveToken(callerToken);
+    circuitBreaker.execute(
+        () -> {
+          restClient
+              .delete()
+              .uri("/api/v0/consistency-checks/{checkId}", checkId)
+              .header("Authorization", "Bearer " + token)
+              .retrieve()
+              .onStatus(
+                  HttpStatusCode::isError,
+                  (req, resp) -> {
+                    throw LedgerStatusPropagation.toChaosException(req, resp);
+                  })
+              .toBodilessEntity();
+          return null;
+        });
   }
 
   private String resolveToken(String callerToken) {

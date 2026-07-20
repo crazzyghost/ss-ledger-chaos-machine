@@ -122,7 +122,8 @@ class RunSummaryServiceTest {
     when(batchRunRepository.findAll())
         .thenReturn(
             List.of(
-                batchRun("a", "F", RunKind.N_TIMES, 5, 0, 0, 0, BatchRunStatus.RUNNING, T0, null, null),
+                batchRun(
+                    "a", "F", RunKind.N_TIMES, 5, 0, 0, 0, BatchRunStatus.RUNNING, T0, null, null),
                 batchRun(
                     "b", "F", RunKind.N_TIMES, 5, 5, 0, 0, BatchRunStatus.COMPLETED, T0, T0, null),
                 batchRun(
@@ -130,7 +131,8 @@ class RunSummaryServiceTest {
 
     var byKey =
         service.listRuns(allRuns()).items().stream()
-            .collect(java.util.stream.Collectors.toMap(RunSummaryResponse::runKey, r -> r.status()));
+            .collect(
+                java.util.stream.Collectors.toMap(RunSummaryResponse::runKey, r -> r.status()));
 
     assertThat(byKey.get("a")).isEqualTo(RunStatusRollup.RUNNING);
     assertThat(byKey.get("b")).isEqualTo(RunStatusRollup.ALL_PUBLISHED);
@@ -204,7 +206,16 @@ class RunSummaryServiceTest {
         .thenReturn(
             List.of(
                 batchRun(
-                    "run-1", "F", RunKind.N_TIMES, 3, 3, 0, 0, BatchRunStatus.COMPLETED, T0, T0,
+                    "run-1",
+                    "F",
+                    RunKind.N_TIMES,
+                    3,
+                    3,
+                    0,
+                    0,
+                    BatchRunStatus.COMPLETED,
+                    T0,
+                    T0,
                     null)));
     when(publishRecordRepository.findUntrackedRunRows(any()))
         .thenReturn(
@@ -226,15 +237,25 @@ class RunSummaryServiceTest {
         .thenReturn(
             List.of(
                 batchRun(
-                    "old", "F", RunKind.N_TIMES, 1, 1, 0, 0, BatchRunStatus.COMPLETED, T0,
-                    T0.plusSeconds(10), null)));
+                    "old",
+                    "F",
+                    RunKind.N_TIMES,
+                    1,
+                    1,
+                    0,
+                    0,
+                    BatchRunStatus.COMPLETED,
+                    T0,
+                    T0.plusSeconds(10),
+                    null)));
     when(publishRecordRepository.findUntrackedRunRows(any()))
         .thenReturn(
             List.of(
                 row("e1", "corr-new", "x", "PUBLISHED", T0.plusSeconds(100)),
                 row("e2", "corr-mid", "y", "PUBLISHED", T0.plusSeconds(50))));
 
-    var keys = service.listRuns(allRuns()).items().stream().map(RunSummaryResponse::runKey).toList();
+    var keys =
+        service.listRuns(allRuns()).items().stream().map(RunSummaryResponse::runKey).toList();
 
     assertThat(keys).containsExactly("corr-new", "corr-mid", "old");
   }
@@ -268,7 +289,16 @@ class RunSummaryServiceTest {
         .thenReturn(
             List.of(
                 batchRun(
-                    "run-1", "F", RunKind.N_TIMES, 1, 1, 0, 0, BatchRunStatus.COMPLETED, T0, T0,
+                    "run-1",
+                    "F",
+                    RunKind.N_TIMES,
+                    1,
+                    1,
+                    0,
+                    0,
+                    BatchRunStatus.COMPLETED,
+                    T0,
+                    T0,
                     null)));
     when(publishRecordRepository.findUntrackedRunRows(any()))
         .thenReturn(List.of(row("e1", "c1", "x", "PUBLISHED", T0.plusSeconds(1))));
@@ -290,8 +320,7 @@ class RunSummaryServiceTest {
                 row("e2", "late", "x", "PUBLISHED", T0.plusSeconds(1000))));
 
     var page =
-        service.listRuns(
-            new RunsQuery(T0.plusSeconds(500), T0.plusSeconds(2000), null, 0, 20));
+        service.listRuns(new RunsQuery(T0.plusSeconds(500), T0.plusSeconds(2000), null, 0, 20));
 
     assertThat(page.total()).isEqualTo(1);
     assertThat(page.items().get(0).runKey()).isEqualTo("late");

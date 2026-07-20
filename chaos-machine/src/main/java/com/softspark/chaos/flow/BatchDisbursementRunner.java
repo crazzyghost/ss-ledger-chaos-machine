@@ -38,8 +38,7 @@ public class BatchDisbursementRunner {
   private final FlowEngine flowEngine;
   private final BatchReservationLookup reservationLookup;
 
-  public BatchDisbursementRunner(
-      FlowEngine flowEngine, BatchReservationLookup reservationLookup) {
+  public BatchDisbursementRunner(FlowEngine flowEngine, BatchReservationLookup reservationLookup) {
     this.flowEngine = flowEngine;
     this.reservationLookup = reservationLookup;
   }
@@ -296,8 +295,7 @@ public class BatchDisbursementRunner {
   }
 
   private static String label(Plan plan, int sequence, int total, String phase) {
-    String shortId =
-        plan.batchId().length() > 8 ? plan.batchId().substring(0, 8) : plan.batchId();
+    String shortId = plan.batchId().length() > 8 ? plan.batchId().substring(0, 8) : plan.batchId();
     return "BATCH_DISB:" + shortId + ":" + sequence + "/" + total + ":" + phase;
   }
 }

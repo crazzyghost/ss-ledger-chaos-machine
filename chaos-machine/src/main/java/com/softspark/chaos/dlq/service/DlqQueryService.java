@@ -88,7 +88,8 @@ public class DlqQueryService {
         };
     var result = repository.findAll(spec, pageable);
     var items = result.getContent().stream().map(DeadLetterRecordResponse::summary).toList();
-    return new PageResponse<>(items, result.getNumber(), result.getSize(), result.getTotalElements());
+    return new PageResponse<>(
+        items, result.getNumber(), result.getSize(), result.getTotalElements());
   }
 
   /**

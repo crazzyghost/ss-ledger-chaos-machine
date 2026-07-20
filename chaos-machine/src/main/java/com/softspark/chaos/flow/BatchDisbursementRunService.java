@@ -109,8 +109,7 @@ public class BatchDisbursementRunService {
     String batchId = Ids.generateUUID();
     long seed = policy.seed() != null ? policy.seed() : outcomeDecider.seedFor(runId);
     boolean[] outcomes = BatchOutcomePlan.decide(policy, n, outcomeDecider, seed);
-    List<BatchSplit.ItemAmount> split =
-        BatchSplit.even(totalPrincipal, totalFees, n, SPLIT_SCALE);
+    List<BatchSplit.ItemAmount> split = BatchSplit.even(totalPrincipal, totalFees, n, SPLIT_SCALE);
 
     List<BatchDisbursementRunner.Item> items = new ArrayList<>(n);
     for (int i = 0; i < n; i++) {

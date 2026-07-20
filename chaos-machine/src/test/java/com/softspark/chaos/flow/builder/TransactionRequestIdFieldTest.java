@@ -27,7 +27,8 @@ class TransactionRequestIdFieldTest {
   @Test
   @DisplayName("each transaction-bearing builder labels the documented ledger request-id field")
   void perBuilderMapping() {
-    assertThat(new CollectionFlowBuilder(topics).transactionRequestIdField()).contains("transaction_id");
+    assertThat(new CollectionFlowBuilder(topics).transactionRequestIdField())
+        .contains("transaction_id");
     assertThat(new DisbursementInitiatedFlowBuilder(topics).transactionRequestIdField())
         .contains("transaction_id");
     assertThat(new DisbursementFlowBuilder(topics).transactionRequestIdField())
@@ -50,7 +51,8 @@ class TransactionRequestIdFieldTest {
         .contains("sweep_request_id");
     assertThat(new TreasuryTransferFlowBuilder(topics).transactionRequestIdField())
         .contains("transfer_request_id");
-    assertThat(new DisbursementBatchReservationRequestFlowBuilder(topics).transactionRequestIdField())
+    assertThat(
+            new DisbursementBatchReservationRequestFlowBuilder(topics).transactionRequestIdField())
         .contains("batch_id");
     assertThat(new DisbursementBatchItemRequestFlowBuilder(topics).transactionRequestIdField())
         .contains("item_id");

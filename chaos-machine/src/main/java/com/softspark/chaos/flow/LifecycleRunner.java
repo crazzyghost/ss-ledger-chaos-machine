@@ -114,7 +114,8 @@ public class LifecycleRunner {
     String label = "LIFECYCLE:" + lifecycle.label() + ":" + (index + 1) + "/" + total;
     FlowResult initResult = flowEngine.execute(initiated, label + ":initiated");
     if (!PUBLISHED.equals(initResult.status())) {
-      log.warn("Lifecycle {}/{} initiated publish failed: {}", index + 1, total, initResult.error());
+      log.warn(
+          "Lifecycle {}/{} initiated publish failed: {}", index + 1, total, initResult.error());
       return new Result(false, initResult.eventId(), null, false, false);
     }
 

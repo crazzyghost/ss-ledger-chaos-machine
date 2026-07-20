@@ -12,6 +12,7 @@ import {
   LogOut,
   Play,
   Scale,
+  ShieldAlert,
   Tags,
   Wallet
 } from "lucide-react";
@@ -43,7 +44,8 @@ const organizationsNavigation: NavItem[] = [
 
 const ledgerNavigation: NavItem[] = [
   { to: "/transactions", label: "Transactions", icon: FileText },
-  { to: "/trial-balance", label: "Trial Balance", icon: Scale }
+  { to: "/trial-balance", label: "Trial Balance", icon: Scale },
+  { to: "/ledger/consistency-checks", label: "Consistency Checks", icon: ShieldAlert }
 ];
 
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {

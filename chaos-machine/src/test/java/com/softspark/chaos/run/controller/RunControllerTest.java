@@ -78,8 +78,7 @@ class RunControllerTest {
   @WithMockUser
   @DisplayName("clamps the page size to 100 and forwards filters to the service")
   void clampsPagingAndForwardsFilters() throws Exception {
-    when(runSummaryService.listRuns(any()))
-        .thenReturn(new PageResponse<>(List.of(), 0, 100, 0L));
+    when(runSummaryService.listRuns(any())).thenReturn(new PageResponse<>(List.of(), 0, 100, 0L));
 
     mockMvc
         .perform(

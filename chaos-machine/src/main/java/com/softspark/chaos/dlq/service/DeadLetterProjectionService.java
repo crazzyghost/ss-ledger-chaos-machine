@@ -60,7 +60,8 @@ public class DeadLetterProjectionService {
    * @param dltOffset the {@code .dlt} offset (Kafka header)
    */
   @Transactional
-  public void project(LedgerDeadLetterRecord record, String dltTopic, int dltPartition, long dltOffset) {
+  public void project(
+      LedgerDeadLetterRecord record, String dltTopic, int dltPartition, long dltOffset) {
     if (record == null) {
       log.warn("Skipping null dead-letter record on {}", dltTopic);
       return;

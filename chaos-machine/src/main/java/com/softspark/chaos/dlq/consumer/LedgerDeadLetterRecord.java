@@ -45,5 +45,6 @@ public record LedgerDeadLetterRecord(
    * @param retryCount the number of retries before dead-lettering
    */
   @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-  public record Failure(String classification, String exceptionType, String message, Integer retryCount) {}
+  public record Failure(
+      String classification, String exceptionType, String message, Integer retryCount) {}
 }

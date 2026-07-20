@@ -58,8 +58,15 @@ public class DlqController {
       @RequestParam(defaultValue = "20") int size) {
     return ResponseEntity.ok(
         queryService.list(
-            domain, transactionId, transactionType, originalTopic, failureClassification, from, to,
-            page, size));
+            domain,
+            transactionId,
+            transactionType,
+            originalTopic,
+            failureClassification,
+            from,
+            to,
+            page,
+            size));
   }
 
   /**

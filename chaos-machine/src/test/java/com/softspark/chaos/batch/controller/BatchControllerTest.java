@@ -1,6 +1,5 @@
 package com.softspark.chaos.batch.controller;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
@@ -86,7 +85,12 @@ class BatchControllerTest {
     void getRows_returns200() throws Exception {
       var row =
           new BatchRowResponse(
-              "row-1", "run-1", 0, BatchRowStatus.PUBLISHED, "evt-1", null,
+              "row-1",
+              "run-1",
+              0,
+              BatchRowStatus.PUBLISHED,
+              "evt-1",
+              null,
               Instant.parse("2026-06-29T10:00:00Z"));
       when(batchService.getRows(eq("run-1"), anyInt(), anyInt()))
           .thenReturn(new PageResponse<>(List.of(row), 0, 20, 1L));
@@ -108,10 +112,10 @@ class BatchControllerTest {
     @DisplayName("POST /api/v0/batches (CSV upload) is gone (404)")
     void createBatch_returns404() throws Exception {
       var file =
-          new MockMultipartFile(
-              "file", "rows.csv", MediaType.TEXT_PLAIN_VALUE, "a,b,c".getBytes());
+          new MockMultipartFile("file", "rows.csv", MediaType.TEXT_PLAIN_VALUE, "a,b,c".getBytes());
       mockMvc
-          .perform(multipart("/api/v0/batches").file(file).param("flowType", "COLLECTION_INITIATED"))
+          .perform(
+              multipart("/api/v0/batches").file(file).param("flowType", "COLLECTION_INITIATED"))
           .andExpect(status().isNotFound());
     }
 

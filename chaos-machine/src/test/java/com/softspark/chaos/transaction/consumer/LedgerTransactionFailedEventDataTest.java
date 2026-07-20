@@ -17,8 +17,7 @@ import org.junit.jupiter.api.Test;
 @DisplayName("LedgerTransactionFailedEventData contract")
 class LedgerTransactionFailedEventDataTest {
 
-  private final ObjectMapper mapper =
-      new ObjectMapper().registerModule(new JavaTimeModule());
+  private final ObjectMapper mapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
   @Test
   @DisplayName("deserializes the ledger snake_case data payload")

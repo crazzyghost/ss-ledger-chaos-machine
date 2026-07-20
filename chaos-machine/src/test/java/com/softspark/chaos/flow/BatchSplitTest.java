@@ -31,7 +31,9 @@ class BatchSplitTest {
 
     assertThat(items).hasSize(n);
     BigDecimal principalSum =
-        items.stream().map(BatchSplit.ItemAmount::principal).reduce(BigDecimal.ZERO, BigDecimal::add);
+        items.stream()
+            .map(BatchSplit.ItemAmount::principal)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal feeSum =
         items.stream().map(BatchSplit.ItemAmount::fee).reduce(BigDecimal.ZERO, BigDecimal::add);
 

@@ -119,10 +119,11 @@ public class ConsumerConfiguration {
   // the whole service to Jackson 3 is out of scope, so the deprecation is suppressed deliberately.
   @SuppressWarnings("removal")
   @Bean(LEDGER_EVENT_CONTAINER_FACTORY)
-  public ConcurrentKafkaListenerContainerFactory<String, byte[]> ledgerEventListenerContainerFactory(
-      ConsumerFactory<String, byte[]> ledgerEventConsumerFactory,
-      DefaultErrorHandler ledgerEventErrorHandler,
-      ObjectMapper kafkaObjectMapper) {
+  public ConcurrentKafkaListenerContainerFactory<String, byte[]>
+      ledgerEventListenerContainerFactory(
+          ConsumerFactory<String, byte[]> ledgerEventConsumerFactory,
+          DefaultErrorHandler ledgerEventErrorHandler,
+          ObjectMapper kafkaObjectMapper) {
     var factory = new ConcurrentKafkaListenerContainerFactory<String, byte[]>();
     factory.setConsumerFactory(ledgerEventConsumerFactory);
     factory.setRecordMessageConverter(new ByteArrayJsonMessageConverter(kafkaObjectMapper));

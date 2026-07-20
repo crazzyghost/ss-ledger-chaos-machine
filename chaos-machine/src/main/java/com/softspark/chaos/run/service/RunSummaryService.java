@@ -119,7 +119,8 @@ public class RunSummaryService {
     List<RunSummaryResponse> items =
         fromIndex >= total
             ? List.of()
-            : new ArrayList<>(filtered.subList(fromIndex, Math.min(fromIndex + query.size(), total)));
+            : new ArrayList<>(
+                filtered.subList(fromIndex, Math.min(fromIndex + query.size(), total)));
     return new PageResponse<>(items, query.page(), query.size(), total);
   }
 
@@ -130,7 +131,9 @@ public class RunSummaryService {
     if (query.to() != null && run.lastActivityAt().isAfter(query.to())) {
       return false;
     }
-    return query.kind() == null || query.kind().isBlank() || query.kind().equalsIgnoreCase(run.kind());
+    return query.kind() == null
+        || query.kind().isBlank()
+        || query.kind().equalsIgnoreCase(run.kind());
   }
 
   private RunSummaryResponse fromBatchRun(BatchRun run) {

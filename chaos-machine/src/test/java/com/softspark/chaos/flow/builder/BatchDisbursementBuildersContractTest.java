@@ -64,7 +64,8 @@ class BatchDisbursementBuildersContractTest {
     String json = mapper.writeValueAsString(envelope.data());
 
     assertThat(envelope.eventType()).isEqualTo("disbursement.batch.initiated");
-    assertThat(envelope.metadata().idempotencyKey()).isEqualTo("disbursement-batch-initiated:BATCH-1");
+    assertThat(envelope.metadata().idempotencyKey())
+        .isEqualTo("disbursement-batch-initiated:BATCH-1");
     assertThat(json)
         .contains("\"operation\":\"BATCH_RESERVATION_REQUEST\"")
         .contains("\"batch_id\":\"BATCH-1\"")
@@ -164,7 +165,8 @@ class BatchDisbursementBuildersContractTest {
                     "provider_reference_id", "PR-1",
                     "merchant_item_ref", "ITEM-REF-1",
                     "principal_amount", "250.0000"))
-            .fees(List.of(new FeeInput("PLATFORM", new BigDecimal("2.5"), "BATCH-PLAT-01", "VA-FEE")))
+            .fees(
+                List.of(new FeeInput("PLATFORM", new BigDecimal("2.5"), "BATCH-PLAT-01", "VA-FEE")))
             .build();
     EventEnvelope<?> envelope =
         new DisbursementBatchItemCompletedFlowBuilder(topics)

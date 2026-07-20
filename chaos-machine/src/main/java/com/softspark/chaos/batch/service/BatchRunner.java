@@ -387,7 +387,9 @@ public class BatchRunner {
     try {
       BatchDisbursementRunner.ItemResult result =
           flowEngine.withBatchLink(
-              row.getBatchId(), row.getId(), () -> runner.runItem(plan, unit.index(), reservationId));
+              row.getBatchId(),
+              row.getId(),
+              () -> runner.runItem(plan, unit.index(), reservationId));
       if (result.success()) {
         row.setStatus(BatchRowStatus.PUBLISHED);
         row.setEventId(result.requestEventId());

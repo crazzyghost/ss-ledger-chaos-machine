@@ -4,7 +4,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.softspark.chaos.account.model.VirtualAccount;
 import com.softspark.chaos.account.repository.VirtualAccountRepository;
-import com.softspark.chaos.base.Ids;
 import com.softspark.chaos.kafka.EventEnvelope;
 import com.softspark.chaos.kafka.EventMetadata;
 import com.softspark.chaos.reservation.consumer.LedgerReservationLifecycleEventData;
@@ -76,7 +75,8 @@ public class ReservationProjectionService {
       Reservation existing = repository.findById(reservationId).orElse(null);
       if (existing == null) {
         repository.save(
-            insert(reservationId, accountId, data, metadata, eventId, created, timestamp, envelope));
+            insert(
+                reservationId, accountId, data, metadata, eventId, created, timestamp, envelope));
         log.debug(
             "Projected reservation {} created={} status={}", reservationId, created, data.status());
         return;

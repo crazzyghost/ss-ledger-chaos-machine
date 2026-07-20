@@ -29,7 +29,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("NTimesExpander")
 class NTimesExpanderTest {
 
-  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 250, 25, 60000L, 100);
+  private static final ChaosLimits LIMITS =
+      new ChaosLimits(10, 100, 1000, 30000L, 250, 25, 60000L, 100);
 
   private FlowCatalogProvider catalogProvider;
   private NTimesExpander expander;
@@ -161,7 +162,8 @@ class NTimesExpanderTest {
     @DisplayName("re-rolls ULID reference fields too, not just the UUID id (collection dedup fix)")
     void rerollsUlidReferenceFields() {
       // Collection's transaction_id is UUID-autogen and provider_reference_id/merchant_ref_id are
-      // ULID-autogen. If only the UUID id were re-rolled, the ledger would dedupe the journal entries
+      // ULID-autogen. If only the UUID id were re-rolled, the ledger would dedupe the journal
+      // entries
       // on the (constant) provider reference. Every autogen reference must vary per iteration.
       var base =
           FlowRequestBuilder.builder()
@@ -177,8 +179,7 @@ class NTimesExpanderTest {
       var txIds = requests.stream().map(r -> r.flowFields().get("transaction_id")).toList();
       var providerRefs =
           requests.stream().map(r -> r.flowFields().get("provider_reference_id")).toList();
-      var merchantRefs =
-          requests.stream().map(r -> r.flowFields().get("merchant_ref_id")).toList();
+      var merchantRefs = requests.stream().map(r -> r.flowFields().get("merchant_ref_id")).toList();
 
       assertThat(txIds).doesNotHaveDuplicates().allSatisfy(v -> assertThat(v).isNotNull());
       assertThat(providerRefs).doesNotHaveDuplicates().allSatisfy(v -> assertThat(v).isNotNull());
@@ -328,8 +329,8 @@ class NTimesExpanderTest {
       // expander, and has no single re-rollable transaction id — exclude it from this coverage.
       return new FlowCatalogProvider(new TopicCatalog())
           .catalog().stream()
-          .filter(FlowCatalogEntry::runnerVisible)
-          .filter(e -> e.batchGroup() == null);
+              .filter(FlowCatalogEntry::runnerVisible)
+              .filter(e -> e.batchGroup() == null);
     }
 
     @ParameterizedTest(name = "{0}")

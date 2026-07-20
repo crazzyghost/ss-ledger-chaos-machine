@@ -34,7 +34,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("NTimesSyncRunner")
 class NTimesSyncRunnerTest {
 
-  private static final ChaosLimits LIMITS = new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L, 100);
+  private static final ChaosLimits LIMITS =
+      new ChaosLimits(10, 100, 1000, 30000L, 100, 25, 60000L, 100);
 
   @Mock private FlowEngine flowEngine;
   private NTimesSyncRunner runner;

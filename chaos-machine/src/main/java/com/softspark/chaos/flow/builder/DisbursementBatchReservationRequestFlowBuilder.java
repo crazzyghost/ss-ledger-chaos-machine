@@ -68,7 +68,8 @@ public class DisbursementBatchReservationRequestFlowBuilder
     var f = new FlowFields(request.flowFields());
 
     BigDecimal totalPrincipal = resolvePrincipal(request, f);
-    BigDecimal totalFees = f.getBigDecimal("total_fees") != null ? f.getBigDecimal("total_fees") : DEFAULT_FEES;
+    BigDecimal totalFees =
+        f.getBigDecimal("total_fees") != null ? f.getBigDecimal("total_fees") : DEFAULT_FEES;
     BigDecimal totalAmount = totalPrincipal.add(totalFees);
 
     Map<String, Object> authorisedPrincipal = new LinkedHashMap<>();

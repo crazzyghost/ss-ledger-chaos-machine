@@ -316,8 +316,7 @@ class FlowEngineTest {
       assertThat(result.status()).isEqualTo("FAILED");
       assertThat(result.historyId()).isEqualTo("history-batch-fail-001");
       verify(historyWriter)
-          .recordBatchFailure(
-              any(), anyString(), anyString(), any(), eq("run-1"), eq("row-1"));
+          .recordBatchFailure(any(), anyString(), anyString(), any(), eq("run-1"), eq("row-1"));
       verify(historyWriter, never()).recordFailure(any(), anyString(), anyString(), any());
     }
   }

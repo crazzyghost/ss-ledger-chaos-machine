@@ -73,7 +73,9 @@ public class CollectionFlowBuilder implements FlowBuilder<CollectionCompletedEve
       BigDecimal feeAmount = gross.subtract(net);
       if (feeAmount.compareTo(BigDecimal.ZERO) > 0) {
         String feeVaId = ctx.resolvedSlots().getOrDefault("fee", "");
-        fees = List.of(new TransactionFeeLine(DEFAULT_FEE_TYPE, feeAmount, Ids.generateULID(), feeVaId));
+        fees =
+            List.of(
+                new TransactionFeeLine(DEFAULT_FEE_TYPE, feeAmount, Ids.generateULID(), feeVaId));
       }
     }
 

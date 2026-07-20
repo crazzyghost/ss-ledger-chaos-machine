@@ -53,7 +53,8 @@ final class BatchOutcomePlan {
           int[] winners =
               IntStream.range(0, n)
                   .boxed()
-                  .sorted(Comparator.comparingLong((Integer i) -> decider.mixed(seed, i)).reversed())
+                  .sorted(
+                      Comparator.comparingLong((Integer i) -> decider.mixed(seed, i)).reversed())
                   .mapToInt(Integer::intValue)
                   .limit(k)
                   .toArray();

@@ -29,8 +29,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("TransactionFailureProjectionService")
 class TransactionFailureProjectionServiceTest {
 
-  private static final UUID LEDGER_TXN_ID =
-      UUID.fromString("11111111-1111-1111-1111-111111111111");
+  private static final UUID LEDGER_TXN_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
   @Mock private TransactionFailureRepository repository;
 
@@ -99,7 +98,13 @@ class TransactionFailureProjectionServiceTest {
   void nullDataSkipped() {
     var empty =
         new EventEnvelope<LedgerTransactionFailedEventData>(
-            "evt-x", "ledger.transaction.failed", Instant.now(), "ledger-service", "1.0", null, null);
+            "evt-x",
+            "ledger.transaction.failed",
+            Instant.now(),
+            "ledger-service",
+            "1.0",
+            null,
+            null);
 
     service.project(empty);
 

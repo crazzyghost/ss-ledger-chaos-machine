@@ -73,7 +73,8 @@ public class ReservationController {
       @RequestParam(required = false) @Nullable String status,
       @RequestParam(defaultValue = "0") int page,
       @RequestParam(defaultValue = "20") int size) {
-    return ResponseEntity.ok(queryService.query(transactionRef, batchId, accountId, status, page, size));
+    return ResponseEntity.ok(
+        queryService.query(transactionRef, batchId, accountId, status, page, size));
   }
 
   /**

@@ -122,7 +122,8 @@ public class FlowEngine {
     String topic = topicCatalog.topicFor(request.flowType());
     String partitionKey = builder.partitionKey(ctx);
     // The request id is intrinsic to the request (same for all sends of one execution); resolved
-    // once and echoed on the result so the client can watch for a matching ledger failure (ADR-025).
+    // once and echoed on the result so the client can watch for a matching ledger failure
+    // (ADR-025).
     String transactionRequestId = registry.transactionRequestIdValue(request).orElse(null);
 
     FlowResult result = null;
@@ -138,8 +139,7 @@ public class FlowEngine {
         }
 
         String chaosLabel = chaosLabelOverride != null ? chaosLabelOverride : send.chaosLabel();
-        boolean malformed =
-            send.chaosLabel() != null && send.chaosLabel().startsWith("MALFORMED");
+        boolean malformed = send.chaosLabel() != null && send.chaosLabel().startsWith("MALFORMED");
         BatchLink link = currentBatchLink.get();
         String historyId =
             link != null
@@ -154,7 +154,13 @@ public class FlowEngine {
                     chaosLabel,
                     malformed)
                 : historyWriter.record(
-                    send.envelope(), topic, partitionKey, published, request, chaosLabel, malformed);
+                    send.envelope(),
+                    topic,
+                    partitionKey,
+                    published,
+                    request,
+                    chaosLabel,
+                    malformed);
 
         result =
             new FlowResult(
@@ -173,7 +179,8 @@ public class FlowEngine {
             ctx.eventId(),
             e.getMessage(),
             e);
-        // Mirror the success branch: a failed publish inside a tracked run must keep its batch_id so
+        // Mirror the success branch: a failed publish inside a tracked run must keep its batch_id
+        // so
         // it stays attributed to its run and is not double-counted as a stray untracked run.
         BatchLink failureLink = currentBatchLink.get();
         String historyId =

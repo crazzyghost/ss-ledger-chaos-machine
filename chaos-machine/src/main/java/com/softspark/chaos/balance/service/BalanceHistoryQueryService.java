@@ -79,7 +79,11 @@ public class BalanceHistoryQueryService {
    */
   @Transactional(readOnly = true)
   public PageResponse<BalanceHistoryResponse> forAccounts(
-      List<String> rawAccountIds, @Nullable Instant from, @Nullable Instant to, int page, int size) {
+      List<String> rawAccountIds,
+      @Nullable Instant from,
+      @Nullable Instant to,
+      int page,
+      int size) {
     List<String> ids = sanitize(rawAccountIds);
     if (ids.isEmpty()) {
       throw new BadRequestException("accountId must contain at least one id");
