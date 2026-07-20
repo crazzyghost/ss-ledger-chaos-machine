@@ -1,0 +1,11 @@
+- chaos-admin
+    - add a consistency check nav to the ledger nav group (label - Consistency Checks)
+    - operators can create/trigger consistency checks
+    - operators can cancel running consistency checks
+    - operators can view all consistency checks
+    - operators can view a single consistency check
+    - operators can view the discrepancies of consistency check
+    - ui should follow existing modal, tabbed detailed views, pagination patterns
+- chaos-machine
+    - requests are proxied to the ledger via the chaos-machine, following existing patterns
+    - mismatch event should be consumed
